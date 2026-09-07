@@ -1,1164 +1,1343 @@
-# Les serveurs Linux : architecture, fonctionnement et composants
+# Comprendre les serveurs Linux, sans jargon
 
-Une leçon complète pour comprendre ce qui tourne réellement sur une machine qui sert des sites,
-des API et des bases de données. On part du matériel, on monte jusqu'à la requête HTTP,
-et on démonte au passage les briques les plus courantes : Apache, Nginx, MariaDB, PostgreSQL,
-Redis, Docker.
+Cette leçon part de zéro. Vous n'avez jamais administré de serveur, et beaucoup de mots
+techniques ne vous disent rien : c'est exactement le point de départ prévu.
 
-**Public visé** : développeur, étudiant ou administrateur débutant qui sait ouvrir un terminal.
-**Durée** : environ 3 heures de lecture, plus les travaux pratiques.
+**Trois promesses.** Chaque mot technique est expliqué la première fois qu'il apparaît, en
+français courant. Une seule image sert de fil rouge du début à la fin, celle du restaurant.
+Et rien ne vous est demandé d'avance : on construit le vocabulaire au fur et à mesure.
+
+Une version condensée pour ceux qui connaissent déjà le sujet existe dans
+[serveurs-linux-reference.md](./serveurs-linux-reference.md). Ne la lisez pas maintenant.
 
 ---
 
 ## Sommaire
 
-1. [Qu'est-ce qu'un serveur Linux ?](#1-quest-ce-quun-serveur-linux-)
-2. [L'architecture en couches](#2-larchitecture-en-couches)
-3. [Le noyau Linux](#3-le-noyau-linux)
-4. [Le démarrage, du bouton d'alimentation au service prêt](#4-le-démarrage-du-bouton-dalimentation-au-service-prêt)
-5. [systemd et la gestion des services](#5-systemd-et-la-gestion-des-services)
-6. [Le système de fichiers](#6-le-système-de-fichiers)
-7. [Utilisateurs, groupes et permissions](#7-utilisateurs-groupes-et-permissions)
-8. [Processus, mémoire et ordonnancement](#8-processus-mémoire-et-ordonnancement)
-9. [Le réseau](#9-le-réseau)
-10. [La pile logicielle d'un serveur : la carte des composants](#10-la-pile-logicielle-dun-serveur--la-carte-des-composants)
-11. [Les serveurs web : Apache et Nginx](#11-les-serveurs-web--apache-et-nginx)
-12. [Les bases de données relationnelles : MariaDB/MySQL et PostgreSQL](#12-les-bases-de-données-relationnelles--mariadbmysql-et-postgresql)
-13. [Caches, NoSQL, files de messages et moteurs de recherche](#13-caches-nosql-files-de-messages-et-moteurs-de-recherche)
-14. [Conteneurs et orchestration](#14-conteneurs-et-orchestration)
-15. [Le trajet complet d'une requête HTTP](#15-le-trajet-complet-dune-requête-http)
-16. [Sécurité](#16-sécurité)
-17. [Observabilité : logs, métriques, sauvegardes](#17-observabilité--logs-métriques-sauvegardes)
-18. [Travaux pratiques](#18-travaux-pratiques)
-19. [Quiz de révision](#19-quiz-de-révision)
-20. [Glossaire](#20-glossaire)
+**Partie 1 : les fondations**
+1. [Le mot "serveur" veut dire trois choses](#1-le-mot-serveur-veut-dire-trois-choses)
+2. [Les 15 mots à connaître avant de commencer](#2-les-15-mots-à-connaître-avant-de-commencer)
+3. [L'image du restaurant](#3-limage-du-restaurant)
+4. [Ce qu'il y a dans la machine : les couches](#4-ce-quil-y-a-dans-la-machine--les-couches)
+5. [Pourquoi Linux, et c'est quoi une distribution](#5-pourquoi-linux-et-cest-quoi-une-distribution)
+
+**Partie 2 : comment le système fonctionne**
+
+6. [Le démarrage, étape par étape](#6-le-démarrage-étape-par-étape)
+7. [Les services : les employés qui travaillent en permanence](#7-les-services--les-employés-qui-travaillent-en-permanence)
+8. [Les fichiers et les dossiers](#8-les-fichiers-et-les-dossiers)
+9. [Les utilisateurs et les droits](#9-les-utilisateurs-et-les-droits)
+10. [Les programmes en train de tourner](#10-les-programmes-en-train-de-tourner)
+11. [Le réseau : adresses, noms et ports](#11-le-réseau--adresses-noms-et-ports)
+
+**Partie 3 : les composants d'un serveur**
+
+12. [Qui fait quoi dans la pile](#12-qui-fait-quoi-dans-la-pile)
+13. [Le serveur web : Apache et Nginx](#13-le-serveur-web--apache-et-nginx)
+14. [Les bases de données : MariaDB et PostgreSQL](#14-les-bases-de-données--mariadb-et-postgresql)
+15. [Le cache, les files d'attente et la recherche](#15-le-cache-les-files-dattente-et-la-recherche)
+16. [Les conteneurs](#16-les-conteneurs)
+
+**Partie 4 : mettre tout ensemble**
+
+17. [Le voyage d'une page web, du clic à l'écran](#17-le-voyage-dune-page-web-du-clic-à-lécran)
+18. [Sécurité : les sept réflexes](#18-sécurité--les-sept-réflexes)
+19. [Savoir si tout va bien](#19-savoir-si-tout-va-bien)
+20. [Vos premiers pas, en pratique](#20-vos-premiers-pas-en-pratique)
+21. [Mémo, quiz corrigé et glossaire](#21-mémo-quiz-corrigé-et-glossaire)
 
 ---
 
-## 1. Qu'est-ce qu'un serveur Linux ?
+# Partie 1 : les fondations
 
-Un serveur n'est pas une catégorie de matériel, c'est un **rôle**. La même machine devient un
-serveur dès qu'elle exécute en permanence des programmes qui attendent des requêtes venant du
-réseau et y répondent. Un vieux portable, un Raspberry Pi, une instance cloud et une lame de
-centre de données peuvent tous jouer ce rôle.
+## 1. Le mot "serveur" veut dire trois choses
 
-Ce qui distingue une installation serveur d'un poste de travail :
+C'est la première source de confusion, et elle bloque beaucoup de débutants. Selon la phrase,
+"serveur" désigne l'une de ces trois choses :
 
-| Aspect | Poste de travail | Serveur |
+1. **Une machine.** Un ordinateur allumé en permanence, quelque part, qui rend service à
+   d'autres ordinateurs. "J'ai loué un serveur à 5 euros par mois."
+2. **Un logiciel.** Un programme qui attend des demandes et y répond. Apache est un "serveur
+   web" : c'est un programme, pas une machine. "J'ai installé un serveur web."
+3. **Un rôle.** L'idée générale de répondre aux autres. "Cette machine sert de serveur de
+   fichiers."
+
+Dans cette leçon, quand le mot est ambigu, je précise : *la machine serveur* ou *le logiciel
+serveur*.
+
+### Client et serveur
+
+C'est le couple de base de tout ce qui suit.
+
+- Le **client**, c'est celui qui demande. Votre navigateur web (Chrome, Firefox, Safari) est un
+  client. Votre application mobile aussi.
+- Le **serveur**, c'est celui qui répond.
+
+Quand vous tapez une adresse dans votre navigateur, votre navigateur (client) envoie une
+**requête** (une demande) à une machine serveur, qui renvoie une **réponse** (la page).
+
+C'est exactement la relation entre un client de restaurant et le personnel du restaurant. D'où
+l'image qu'on va garder tout du long.
+
+---
+
+## 2. Les 15 mots à connaître avant de commencer
+
+Lisez ce tableau une fois, sans chercher à le retenir. Vous y reviendrez naturellement. Chaque
+mot est réexpliqué en contexte plus loin.
+
+| Le mot | Ce que ça veut dire, simplement | L'image |
 |---|---|---|
-| Interface | Environnement graphique (GNOME, KDE) | Ligne de commande, accès distant SSH |
-| Durée de vie | Éteint chaque soir | Fonctionne en continu, souvent des années |
-| Charge | Un utilisateur interactif | Des milliers de connexions simultanées |
-| Priorité | Latence perçue par l'humain | Débit, disponibilité, prévisibilité |
-| Mises à jour | Quand ça arrange | Fenêtres planifiées, souvent sans redémarrage |
+| **Système d'exploitation** (OS) | Le logiciel de base qui fait marcher l'ordinateur et sur lequel tous les autres programmes s'installent. Windows, macOS et Linux en sont. | Le bâtiment et son règlement intérieur |
+| **Noyau** (*kernel*) | Le cœur du système d'exploitation. C'est lui, et lui seul, qui commande le matériel. | Le directeur, seul à avoir les clés du bâtiment |
+| **Matériel** | Les composants physiques : processeur, mémoire, disque, carte réseau. | Les murs, les machines, les camions |
+| **Processeur** (CPU) | Ce qui calcule. Sa puissance se compte en "cœurs" : un cœur, une tâche à la fois. | Les paires de mains |
+| **Mémoire vive** (RAM) | L'espace de travail immédiat, très rapide, mais qui s'efface quand la machine s'éteint. | Le plan de travail |
+| **Disque** | Le stockage durable, plus lent, qui survit à l'extinction. | L'entrepôt |
+| **Programme** | Un fichier contenant des instructions, au repos sur le disque. | Une recette écrite |
+| **Processus** | Un programme en train de s'exécuter, chargé en mémoire. | La recette en train d'être cuisinée |
+| **Service** ou **démon** | Un programme qui tourne en permanence en arrière-plan, sans écran, et attend des demandes. | L'employé toujours à son poste |
+| **Terminal** | La fenêtre noire où l'on tape des commandes au clavier. C'est l'outil principal sur un serveur. | Le talkie-walkie pour donner des ordres |
+| **Commande** | Un ordre tapé dans le terminal. Exemple : `ls` affiche la liste des fichiers. | Une phrase d'ordre |
+| **Réseau** | Ce qui relie les machines entre elles, y compris Internet. | Les routes |
+| **Adresse IP** | Le numéro d'une machine sur le réseau, comme `192.168.1.10`. | L'adresse postale |
+| **Port** | Un numéro qui désigne *quel service* on veut sur cette machine. Le 443 pour les sites sécurisés. | Le numéro du guichet à l'accueil |
+| **Requête / réponse** | La demande envoyée par le client, et ce que le serveur renvoie. | La commande passée, le plat servi |
 
-**Pourquoi Linux domine ce rôle ?** Trois raisons pratiques. Le système est modulaire, donc on
-n'installe que ce dont on a besoin (une image serveur minimale tient en quelques centaines de
-mégaoctets). Il est pilotable intégralement en ligne de commande, donc scriptable et
-reproductible. Et il est libre, donc dupliquer un serveur en mille exemplaires ne coûte rien en
-licences.
+Trois mots supplémentaires qui reviendront souvent :
 
-**Distributions serveur courantes** : Debian et Ubuntu Server (famille APT, paquets `.deb`),
-Red Hat Enterprise Linux, Rocky Linux, AlmaLinux et Fedora Server (famille DNF/RPM), et
-Alpine Linux (très légère, omniprésente dans les conteneurs). Les commandes de cette leçon
-utilisent la syntaxe Debian/Ubuntu quand elle diffère, avec l'équivalent RHEL indiqué.
-
----
-
-## 2. L'architecture en couches
-
-Tout le système s'organise en couches empilées. Chaque couche ne parle qu'à ses voisines
-immédiates, ce qui permet de remplacer une brique sans toucher aux autres.
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  APPLICATIONS                                               │
-│  Apache, Nginx, MariaDB, PostgreSQL, Redis, votre code      │
-├─────────────────────────────────────────────────────────────┤
-│  BIBLIOTHÈQUES SYSTÈME (glibc, OpenSSL, libpcre...)         │
-│  Traduisent les appels du langage en appels système         │
-├─────────────────────────────────────────────────────────────┤
-│  APPELS SYSTÈME (open, read, write, socket, fork, mmap...)  │  <- frontière
-├─────────────────────────────────────────────────────────────┤     de sécurité
-│  NOYAU LINUX                                                │
-│  Processus | Mémoire | VFS | Réseau | Pilotes               │
-├─────────────────────────────────────────────────────────────┤
-│  MATÉRIEL : CPU, RAM, disques, cartes réseau                │
-└─────────────────────────────────────────────────────────────┘
-```
-
-La ligne des appels système est la frontière la plus importante du système. Au-dessus, on est en
-**espace utilisateur** (*user space*) : un programme qui plante n'emporte que lui-même. En
-dessous, on est en **espace noyau** (*kernel space*) : un bug y fait tomber la machine entière.
-Le processeur applique physiquement cette séparation via ses niveaux de privilège (anneaux 0 et 3
-sur x86).
-
-Concrètement, quand votre code PHP écrit `file_get_contents('/etc/hosts')`, la chaîne est :
-PHP appelle une fonction de la glibc, la glibc exécute l'instruction `syscall` avec le numéro de
-`openat`, le processeur bascule en mode noyau, le noyau vérifie les permissions, lit les blocs via
-le pilote de disque, recopie les données dans la mémoire du processus, puis rend la main.
-
-**Observer cette frontière en direct** :
-
-```bash
-strace -c cat /etc/hostname      # compte les appels système d'une commande
-strace -e trace=openat,read ls   # ne trace que certains appels
-```
+- **Configuration** : les réglages d'un logiciel, écrits dans des fichiers texte. Sur Linux, on
+  ne clique pas dans des menus, on modifie des fichiers.
+- **Paquet** : un logiciel prêt à installer, avec tout ce qu'il lui faut. On les récupère depuis
+  une sorte de magasin en ligne, avec une commande.
+- **Cache** : une copie temporaire d'un résultat, gardée sous la main pour ne pas refaire le
+  travail. Comme garder la sauce déjà préparée à côté du feu.
 
 ---
 
-## 3. Le noyau Linux
+## 3. L'image du restaurant
 
-Le noyau est le programme qui possède réellement la machine. Tout le reste lui demande la
-permission. Il est **monolithique modulaire** : le code cœur est un seul gros binaire
-(`/boot/vmlinuz-*`), mais les pilotes peuvent être chargés et déchargés à chaud sous forme de
-modules (`.ko`).
+Gardez ce tableau en tête. Chaque composant technique de cette leçon a sa place dedans.
 
-Ses cinq grands chantiers :
+| Dans le restaurant | Sur le serveur | Ce que ça fait |
+|---|---|---|
+| Le client à table | Le navigateur | Il demande quelque chose |
+| La porte et le videur | Le pare-feu | Il laisse entrer ou refuse |
+| Le serveur de salle | Le serveur web (Apache, Nginx) | Il prend la commande et apporte l'assiette |
+| Les plats déjà préparés en vitrine | Les fichiers statiques (images, feuilles de style) | Servis tels quels, immédiatement |
+| La cuisine | L'application (votre code) | Elle prépare ce qui est demandé sur mesure |
+| L'entrepôt et ses rayonnages | La base de données (MariaDB, PostgreSQL) | Elle range tout, durablement, et retrouve vite |
+| Le frigo à portée de main | Le cache (Redis) | Il garde les choses les plus demandées, très près |
+| Le carnet de commandes en attente | La file de messages (RabbitMQ) | Il note ce qui sera fait plus tard |
+| Le bâtiment et le règlement | Le système d'exploitation Linux | Il fait tenir l'ensemble |
+| Le directeur, seul à avoir les clés | Le noyau | Il arbitre l'accès aux ressources |
+| Le cahier de bord | Les journaux (*logs*) | Il note tout ce qui s'est passé |
 
-### 3.1 La gestion des processus
-Le noyau crée les processus (`fork`, `clone`, `execve`), leur attribue du temps de calcul via
-l'**ordonnanceur** (CFS, remplacé par EEVDF depuis Linux 6.6), et les fait communiquer (signaux,
-tubes, sockets, mémoire partagée). Il donne l'illusion que des centaines de programmes tournent
-en même temps sur quelques cœurs, en les alternant toutes les quelques millisecondes.
-
-### 3.2 La gestion de la mémoire
-Chaque processus voit un espace d'adressage virtuel privé et continu. La **MMU** du processeur,
-pilotée par les tables de pages du noyau, traduit ces adresses virtuelles en adresses physiques.
-Cela permet trois choses essentielles : l'isolation (un processus ne peut pas lire la mémoire d'un
-autre), le partage (une bibliothèque comme la glibc n'est chargée qu'une fois en RAM pour tous),
-et le *swap* (déplacer des pages inactives sur disque).
-
-Le noyau utilise aussi toute la RAM libre comme **cache disque** (*page cache*). C'est pourquoi
-`free -h` montre souvent très peu de mémoire "libre" : ce n'est pas un problème, la colonne
-`available` est la seule qui compte.
-
-### 3.3 Le système de fichiers virtuel (VFS)
-Le VFS est une couche d'abstraction qui présente ext4, XFS, Btrfs, NFS, tmpfs et une clé USB
-derrière la même interface `open`/`read`/`write`/`close`. C'est ce qui permet le principe
-"tout est fichier" : un disque, un terminal, une socket réseau et un capteur de température
-s'utilisent tous avec les mêmes appels.
-
-### 3.4 La pile réseau
-Le noyau implémente TCP/IP intégralement : découpage en paquets, retransmission, contrôle de
-congestion, routage, filtrage (Netfilter, base de `iptables` et `nftables`). Les applications ne
-voient que des **sockets**.
-
-### 3.5 Les pilotes de périphériques
-Le code qui parle au matériel réel. Il représente la majorité des lignes du noyau.
-
-**Commandes utiles** :
-
-```bash
-uname -a                 # version du noyau et architecture
-lsmod                    # modules chargés
-dmesg -T | tail -30      # messages du noyau, horodatés
-sysctl -a | grep tcp     # paramètres réglables du noyau
-cat /proc/cpuinfo        # /proc est une fenêtre sur les structures du noyau
-```
-
-`/proc` et `/sys` ne sont pas de vrais fichiers sur disque : ce sont des systèmes de fichiers
-virtuels générés à la volée par le noyau. Lire `/proc/meminfo` exécute du code noyau.
+Quand une notion vous échappe plus loin, revenez à cette ligne-là du tableau.
 
 ---
 
-## 4. Le démarrage, du bouton d'alimentation au service prêt
+## 4. Ce qu'il y a dans la machine : les couches
 
-Comprendre cette séquence, c'est savoir où chercher quand un serveur ne remonte pas.
+Un serveur Linux est organisé en couches empilées. Chaque couche ne parle qu'à ses voisines
+immédiates. Du bas vers le haut :
 
-**Étape 1 : le firmware (UEFI, ou BIOS sur les machines anciennes).**
-Il teste le matériel, puis cherche un chargeur d'amorçage. En UEFI, il lit la partition EFI
-(`/boot/efi`, formatée en FAT32) et exécute un fichier `.efi`.
+```
+   4. VOS PROGRAMMES
+      Apache, MariaDB, votre site
+              ▲
+   3. LES BIBLIOTHÈQUES
+      Des morceaux de code tout faits, partagés par tous les programmes
+              ▲
+      ---- LE GUICHET (les "appels système") ----
+              ▲
+   2. LE NOYAU LINUX
+      Le seul à commander le matériel
+              ▲
+   1. LE MATÉRIEL
+      Processeur, mémoire, disque, carte réseau
+```
 
-**Étape 2 : le chargeur d'amorçage (GRUB2 le plus souvent).**
-Il affiche le menu des noyaux disponibles, charge en RAM le noyau choisi et l'**initramfs**, puis
-passe la main au noyau avec une ligne de paramètres (`root=UUID=...`, `quiet`).
+### Pourquoi cette séparation existe
 
-**Étape 3 : l'initramfs.**
-C'est un mini système de fichiers en RAM contenant juste les pilotes nécessaires pour atteindre
-le vrai disque racine : contrôleur RAID, LVM, déchiffrement LUKS, pilote réseau pour un démarrage
-iSCSI. Sans lui, un noyau générique ne saurait pas monter une racine chiffrée sur RAID.
+Le noyau est le seul autorisé à toucher au matériel. Aucun programme ne lit directement le
+disque : il **demande** au noyau de le faire pour lui. Cette demande porte un nom technique,
+l'**appel système** (*system call*), mais l'idée est simple : c'est un guichet.
 
-**Étape 4 : le montage de la racine et le PID 1.**
-Le noyau monte `/` puis exécute `/sbin/init`, qui est aujourd'hui un lien vers `systemd`.
-Ce processus porte le PID 1 et devient l'ancêtre de tous les autres. S'il meurt, le noyau panique.
+Reprenons le restaurant. Un cuisinier ne va pas chercher lui-même la marchandise dans le camion.
+Il passe une demande au responsable, qui vérifie qu'il en a le droit et va chercher la
+marchandise. C'est plus lent qu'en libre-service, mais cela apporte trois choses décisives :
 
-**Étape 5 : systemd déroule les cibles.**
-Il monte les systèmes de fichiers de `/etc/fstab`, configure le réseau, lance les services, et
-atteint la cible par défaut (`multi-user.target` sur un serveur, `graphical.target` sur un poste).
+1. **La sécurité.** Le noyau vérifie chaque demande. Un programme ne peut pas lire un fichier
+   qu'il n'a pas le droit de lire.
+2. **La stabilité.** Un programme qui plante n'emporte que lui-même. Le reste de la machine
+   continue. C'est pour cela qu'un site web peut tomber sans que le serveur s'éteigne.
+3. **Le partage.** Cent programmes croient chacun avoir la machine pour eux seuls. C'est le
+   noyau qui distribue le temps de calcul et la mémoire entre eux, en alternant très vite.
 
-**Diagnostiquer un démarrage lent** :
+### Deux territoires
+
+On parle souvent de deux zones :
+
+- L'**espace utilisateur**, au-dessus du guichet : là où vivent tous vos programmes. Un accident
+  y reste local.
+- L'**espace noyau**, en dessous : le territoire du noyau. Un accident ici fait tomber toute la
+  machine. C'est rare, et ça porte un nom, le *kernel panic*.
+
+Vous n'écrirez jamais de code dans l'espace noyau. Mais savoir que cette frontière existe
+explique beaucoup de messages d'erreur.
+
+---
+
+## 5. Pourquoi Linux, et c'est quoi une distribution
+
+### Linux, ce n'est que le noyau
+
+Techniquement, "Linux" désigne uniquement le noyau, la couche 2 du schéma. Tout seul, il ne fait
+rien d'utile pour un humain : pas de terminal, pas de commandes, pas d'installateur.
+
+Une **distribution** (souvent abrégée "distro") est un assemblage complet et cohérent : le noyau
+Linux, plus les outils de base, plus un moyen d'installer des logiciels, plus des réglages par
+défaut. C'est une recette d'assemblage, préparée par une équipe ou une entreprise.
+
+| Famille | Distributions | Commande d'installation | Notes |
+|---|---|---|---|
+| Debian | Debian, Ubuntu Server | `apt install nginx` | La plus répandue, la plus documentée en ligne |
+| Red Hat | RHEL, Rocky, AlmaLinux, Fedora | `dnf install nginx` | Très présente en entreprise |
+| Alpine | Alpine Linux | `apk add nginx` | Minuscule, surtout utilisée dans les conteneurs |
+
+**Cette leçon utilise les commandes Debian/Ubuntu**, et signale l'équivalent Red Hat quand il
+change. Si vous débutez, prenez Ubuntu Server : vous trouverez plus de réponses sur Internet.
+
+### Le gestionnaire de paquets
+
+Sur Windows, on télécharge un fichier `.exe` sur un site. Sur Linux, ce serait une mauvaise
+pratique. On utilise un **gestionnaire de paquets** : une commande qui va chercher le logiciel
+dans un dépôt officiel, vérifie sa signature, installe aussi tout ce dont il dépend, et sait le
+mettre à jour plus tard.
 
 ```bash
-systemd-analyze                 # temps total, réparti firmware / noyau / userspace
-systemd-analyze blame           # les services les plus lents, classés
-systemd-analyze critical-chain  # le chemin critique des dépendances
-journalctl -b -p err            # erreurs du démarrage courant
-journalctl -b -1                # journal du démarrage précédent (utile après un crash)
+sudo apt update              # rafraîchit la liste des logiciels disponibles
+sudo apt install nginx       # installe le serveur web Nginx
+sudo apt upgrade             # met à jour tout ce qui est installé
+```
+
+`sudo` signifie "fais ceci en tant qu'administrateur". On y revient au chapitre 9.
+
+### Pourquoi Linux domine sur les serveurs
+
+- **On n'installe que le nécessaire.** Pas d'interface graphique, pas de logiciels inutiles :
+  moins de choses à maintenir et moins de failles possibles.
+- **Tout se pilote au clavier**, donc tout peut être écrit dans un script et rejoué à
+  l'identique sur mille machines.
+- **C'est libre et gratuit**, donc dupliquer un serveur ne coûte rien en licences.
+
+---
+
+# Partie 2 : comment le système fonctionne
+
+## 6. Le démarrage, étape par étape
+
+Quand vous allumez la machine, cinq choses se passent dans l'ordre. Savoir cet ordre, c'est
+savoir où chercher quand un serveur ne redémarre pas.
+
+**1. Le firmware fait l'appel.**
+Un petit programme gravé dans la carte mère (l'UEFI, autrefois le BIOS) vérifie que le matériel
+répond, puis cherche sur les disques de quoi démarrer.
+
+**2. Le chargeur d'amorçage choisit le noyau.**
+C'est GRUB, le petit menu noir qui apparaît parfois une seconde. Il charge le noyau Linux en
+mémoire et lui passe la main.
+
+**3. La trousse à outils de secours (l'initramfs) entre en jeu.**
+Problème d'œuf et de poule : pour lire le disque, le noyau a parfois besoin de pilotes qui sont
+*sur* ce disque. La solution est un mini-système temporaire chargé en mémoire, contenant juste
+les outils nécessaires pour atteindre le vrai disque. Il s'appelle l'**initramfs**. Une fois le
+disque monté, il s'efface.
+
+**4. Le premier programme démarre.**
+Le noyau lance un programme et un seul, qui porte le numéro 1 et devient l'ancêtre de tous les
+autres. Aujourd'hui c'est **systemd**. S'il meurt, toute la machine s'arrête.
+
+**5. systemd ouvre le restaurant.**
+Il monte les disques, configure le réseau, puis lance les services les uns après les autres,
+en parallèle quand il le peut, jusqu'à ce que la machine soit prête à répondre.
+
+### Si le démarrage est lent
+
+```bash
+systemd-analyze              # combien de temps a pris chaque grande phase
+systemd-analyze blame        # la liste des services, du plus lent au plus rapide
+journalctl -b -p err         # les erreurs du démarrage en cours
 ```
 
 ---
 
-## 5. systemd et la gestion des services
+## 7. Les services : les employés qui travaillent en permanence
 
-`systemd` est le gestionnaire de services de la quasi-totalité des distributions serveur
-modernes. Il remplace l'ancien System V init et ses scripts shell séquentiels par un modèle
-déclaratif de **unités** avec dépendances, ce qui autorise le démarrage en parallèle.
+### Ce qu'est un service
 
-### 5.1 Les types d'unités
+Un **service** (ou **démon**, en anglais *daemon*) est un programme qui tourne en permanence en
+arrière-plan et attend qu'on lui demande quelque chose. Il n'a pas de fenêtre, pas de bouton.
+Apache est un service. MariaDB est un service. Votre application aussi, une fois installée.
 
-| Suffixe | Rôle |
-|---|---|
-| `.service` | Un démon (Apache, PostgreSQL, votre application) |
-| `.socket` | Une socket en écoute qui démarre le service à la première connexion |
-| `.timer` | Un déclencheur périodique, remplaçant moderne de cron |
-| `.mount` | Un point de montage |
-| `.target` | Un regroupement, équivalent des anciens niveaux d'exécution |
+C'est l'employé qui reste à son poste toute la journée, même quand il n'y a personne.
 
-### 5.2 Les commandes du quotidien
+### systemd, le chef du personnel
+
+**systemd** est le programme qui gère tous les services : il les démarre au bon moment, les
+redémarre s'ils tombent, et note ce qu'ils racontent.
+
+Les commandes suivent toutes le même moule : `systemctl` + l'action + le nom du service.
 
 ```bash
-systemctl status nginx           # état, PID, mémoire, dernières lignes de log
-systemctl start|stop|restart nginx
-systemctl reload nginx           # recharge la conf sans couper les connexions
-systemctl enable --now nginx     # active au démarrage ET démarre maintenant
-systemctl list-units --failed    # tout ce qui est en échec : le premier réflexe
-journalctl -u nginx -f           # suivre les logs du service en direct
+systemctl status nginx     # comment va ce service ? Actif ? Depuis quand ?
+systemctl start nginx      # démarre-le maintenant
+systemctl stop nginx       # arrête-le
+systemctl restart nginx    # arrête puis redémarre
+systemctl reload nginx     # relis tes réglages sans t'arrêter
+systemctl enable nginx     # démarre-le automatiquement à chaque allumage
+systemctl disable nginx    # ne le démarre plus automatiquement
+```
+
+Deux pièges de débutant :
+
+- `start` démarre le service **maintenant**, mais ne le fera pas au prochain redémarrage de la
+  machine. C'est `enable` qui s'en charge. Pour les deux d'un coup :
+  `systemctl enable --now nginx`.
+- `restart` coupe le service : les visiteurs en cours sont interrompus. `reload` lui fait relire
+  sa configuration sans s'arrêter. **Préférez toujours `reload` quand c'est possible.**
+
+### Le cahier de bord
+
+Chaque service raconte ce qu'il fait. Tout est centralisé et se consulte avec `journalctl` :
+
+```bash
+journalctl -u nginx              # tout ce qu'a dit le service nginx
+journalctl -u nginx -f           # et continue à me le montrer en direct
 journalctl -u nginx --since "1 hour ago"
+systemctl list-units --failed    # LA commande à taper quand quelque chose ne marche pas
 ```
 
-Retenez la différence entre `restart` (le processus meurt et renaît, les connexions en cours
-tombent) et `reload` (le processus relit sa configuration à chaud). En production, on privilégie
-`reload` chaque fois que le service le supporte.
-
-### 5.3 Écrire une unité de service
-
-Fichier `/etc/systemd/system/mon-api.service` :
-
-```ini
-[Unit]
-Description=Mon API Node.js
-After=network.target postgresql.service
-Wants=postgresql.service
-
-[Service]
-Type=simple
-User=api
-Group=api
-WorkingDirectory=/srv/mon-api
-ExecStart=/usr/bin/node server.js
-Restart=on-failure
-RestartSec=5
-Environment=NODE_ENV=production
-EnvironmentFile=/etc/mon-api/env
-
-# Durcissement : le service ne voit qu'un système minimal
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/srv/mon-api/uploads
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Puis `systemctl daemon-reload && systemctl enable --now mon-api`.
-
-Les directives de durcissement de la fin méritent l'attention : elles utilisent les *namespaces*
-du noyau pour donner au service une vue restreinte du système. `ProtectSystem=strict` rend tout le
-système de fichiers en lecture seule sauf les chemins listés dans `ReadWritePaths`. Une faille
-dans votre application ne permet alors plus d'écrire ailleurs. Vérifiez le résultat avec
-`systemd-analyze security mon-api.service`.
+Cette dernière ligne liste tous les services en échec. C'est le premier réflexe de diagnostic.
 
 ---
 
-## 6. Le système de fichiers
+## 8. Les fichiers et les dossiers
 
-### 6.1 L'arborescence unique
+### Une seule racine, pas de lettres de lecteur
 
-Linux n'a pas de lettres de lecteur. Tout part d'une racine `/` et les périphériques
-supplémentaires sont **montés** dans des sous-répertoires. La norme FHS
-(*Filesystem Hierarchy Standard*) fixe le rôle de chaque dossier :
+Sur Windows, chaque disque a sa lettre : `C:`, `D:`. Sur Linux, il n'y en a pas. Tout part d'un
+unique point de départ, la **racine**, notée `/`, et tout le reste est un dossier à l'intérieur.
 
-| Chemin | Contenu | À connaître pour un serveur |
+Quand on ajoute un deuxième disque, on ne lui donne pas de lettre : on le **monte**, c'est-à-dire
+qu'on le greffe à un dossier existant. Après avoir monté un disque sur `/donnees`, écrire dans
+`/donnees` écrit sur ce disque. L'utilisateur ne voit qu'une arborescence continue.
+
+### Les dossiers à connaître
+
+Vous n'avez besoin d'en retenir que six pour commencer.
+
+| Dossier | Ce qu'il contient | Pourquoi il compte pour vous |
 |---|---|---|
-| `/etc` | Fichiers de configuration | C'est ici qu'on travaille et qu'on sauvegarde |
-| `/var` | Données variables : logs, bases, files | `/var/log`, `/var/lib/mysql`, `/var/lib/postgresql` |
-| `/srv` | Données servies par la machine | Emplacement recommandé pour les sites |
-| `/home` | Répertoires personnels | Peu utilisé côté serveur |
-| `/usr` | Programmes et bibliothèques installés | Géré par le gestionnaire de paquets |
-| `/opt` | Logiciels tiers autonomes | Installations manuelles |
-| `/tmp` | Temporaire, vidé au redémarrage | Souvent en RAM (tmpfs) |
-| `/proc`, `/sys` | Fenêtres virtuelles sur le noyau | Lecture seule d'information |
-| `/dev` | Fichiers de périphériques | `/dev/sda`, `/dev/null` |
-| `/boot` | Noyau, initramfs, GRUB | Partition souvent petite, à surveiller |
+| `/etc` | Tous les fichiers de réglages | C'est là que vous travaillerez le plus. À sauvegarder en priorité |
+| `/var` | Ce qui grossit avec le temps | Contient les journaux et les bases de données |
+| `/var/log` | Les journaux de tous les logiciels | Le premier endroit où regarder quand ça casse |
+| `/home` | Les dossiers personnels des utilisateurs | Peu utilisé sur un serveur |
+| `/srv` | Les données servies au public | Un bon endroit pour mettre votre site |
+| `/tmp` | Le temporaire, effacé au redémarrage | N'y rangez jamais rien d'important |
 
-### 6.2 Les systèmes de fichiers
+Trois autres que vous croiserez sans avoir à y toucher : `/usr` (les programmes installés),
+`/dev` (les périphériques, vus comme des fichiers) et `/proc` (une fenêtre sur ce que fait le
+noyau, générée à la volée, ce ne sont pas de vrais fichiers).
 
-**ext4** est le choix par défaut historique : robuste, journalisé, sans surprise.
-**XFS** gère mieux les très gros fichiers et le parallélisme, c'est le défaut sur RHEL.
-**Btrfs** et **ZFS** apportent les instantanés (*snapshots*), les sommes de contrôle par bloc et
-la compression transparente, au prix d'une complexité supérieure.
-
-**LVM** (*Logical Volume Manager*) s'intercale entre les disques physiques et les systèmes de
-fichiers. Il permet d'agrandir un volume à chaud, de le répartir sur plusieurs disques et de
-prendre des instantanés avant une migration risquée. Sur un serveur, c'est presque toujours un
-bon investissement.
-
-### 6.3 Montage et espace disque
+### Se déplacer et regarder
 
 ```bash
-lsblk                    # arbre des disques et partitions
-df -hT                   # espace libre par système de fichiers, avec le type
-df -i                    # inodes libres : un disque peut être plein d'inodes sans être plein !
-du -sh /var/log/*        # ce qui pèse dans un dossier
-mount | column -t        # ce qui est monté et comment
-cat /etc/fstab           # montages permanents appliqués au démarrage
+pwd                  # où suis-je ?
+ls -la /etc          # liste le contenu d'un dossier, tout compris
+cd /var/log          # se déplacer dans un dossier
+cat /etc/hostname    # afficher le contenu d'un fichier court
+less /var/log/syslog # lire un gros fichier page par page (q pour sortir)
+tail -f /var/log/nginx/access.log   # voir les nouvelles lignes en direct
 ```
 
-Le piège classique : `df -h` dit qu'il reste de la place, mais l'écriture échoue. Deux causes
-fréquentes, les inodes épuisés (`df -i`, typique d'un dossier de sessions PHP avec des millions
-de petits fichiers), ou un fichier supprimé mais toujours ouvert par un processus, dont l'espace
-n'est libéré qu'à la fermeture (`lsof +L1`).
+### L'espace disque
+
+Un disque plein arrête tout : les bases de données refusent d'écrire, les sites tombent. Deux
+commandes suffisent :
+
+```bash
+df -h            # combien reste-t-il de place, disque par disque
+du -sh /var/log/*   # qu'est-ce qui prend de la place dans ce dossier
+```
+
+Dans `df -h`, regardez la colonne d'utilisation. Au-delà de 80 %, il faut agir : c'est le moment
+de vérifier `/var/log`, qui grossit sans arrêt si personne ne surveille.
 
 ---
 
-## 7. Utilisateurs, groupes et permissions
+## 9. Les utilisateurs et les droits
 
-### 7.1 Le modèle de base
+### root, l'administrateur
 
-Chaque fichier a un propriétaire, un groupe, et neuf bits de permission : lecture, écriture,
-exécution, pour le propriétaire, le groupe et les autres.
+Sur Linux, un compte peut absolument tout : il s'appelle **root**. Il n'y a aucun garde-fou, pas
+de fenêtre "êtes-vous sûr ?". C'est le passe-partout du bâtiment.
 
-```
--rw-r--r--  1 www-data www-data  1256 sept.  6 10:12 index.html
-│└┬┘└┬┘└┬┘     └───┬──┘ └───┬──┘
-│ │  │  │          │        └── groupe
-│ │  │  └── autres │
-│ │  └───── groupe └─────────── propriétaire
-│ └──────── propriétaire
-└────────── type : - fichier, d dossier, l lien
-```
-
-En notation octale, `r=4`, `w=2`, `x=1`. Donc `chmod 644` donne `rw-r--r--` et `chmod 750` donne
-`rwxr-x---`. Sur un dossier, `x` signifie "traverser", pas "exécuter" : sans lui, on ne peut pas
-entrer dans le dossier même en ayant `r`.
+D'où la règle universelle : **on ne travaille pas en root**. On se connecte avec son propre
+compte, et on demande ponctuellement les pouvoirs d'administrateur avec `sudo` :
 
 ```bash
-chown -R www-data:www-data /srv/site
-chmod 750 /srv/site
-find /srv/site -type f -exec chmod 640 {} +
-find /srv/site -type d -exec chmod 750 {} +
+sudo apt install nginx        # exécute cette commande en tant qu'administrateur
 ```
 
-### 7.2 Les comptes de service
+Deux avantages : vous ne détruisez pas le système par une faute de frappe, et chaque usage de
+`sudo` est noté dans le cahier de bord, donc on sait qui a fait quoi.
 
-Règle d'or : **un service ne tourne jamais en `root`**. Chaque démon a son compte système dédié,
-sans mot de passe et sans shell de connexion (`www-data` pour Apache/Nginx sur Debian, `mysql`,
-`postgres`, `redis`). Si le service est compromis, l'attaquant n'obtient que les droits de ce
-compte.
+### Lire les permissions
+
+Chaque fichier appartient à un **propriétaire** et à un **groupe**, et porte des droits pour
+trois catégories de personnes. Quand vous tapez `ls -l`, vous voyez ceci :
+
+```
+-rw-r--r--  1 www-data www-data  1256  index.html
+```
+
+Décodons de gauche à droite :
+
+- Le premier caractère dit le type : `-` un fichier, `d` un dossier, `l` un raccourci.
+- Ensuite trois blocs de trois lettres : les droits du **propriétaire**, ceux du **groupe**,
+  ceux de **tous les autres**.
+- `r` = lire (*read*), `w` = écrire (*write*), `x` = exécuter, et `-` = pas ce droit.
+
+Donc `rw- r-- r--` se lit : le propriétaire peut lire et modifier, le groupe peut seulement
+lire, tout le monde peut seulement lire.
+
+Sur un **dossier**, `x` ne veut pas dire "exécuter" mais "entrer dedans". Un dossier sans `x` est
+inaccessible même si vous avez le droit de lecture. C'est une cause d'erreur très fréquente.
+
+### Modifier les droits
 
 ```bash
-useradd --system --no-create-home --shell /usr/sbin/nologin monapp
-id www-data
+sudo chown -R www-data:www-data /srv/site   # change le propriétaire et le groupe
+sudo chmod 750 /srv/site                    # change les droits
 ```
 
-### 7.3 sudo et l'escalade contrôlée
+Les chiffres viennent d'une addition : lire vaut 4, écrire vaut 2, exécuter vaut 1. Un chiffre
+par catégorie.
 
-On se connecte avec un compte nominatif, et on élève ses droits ponctuellement avec `sudo`, ce qui
-laisse une trace dans les journaux. Les règles vivent dans `/etc/sudoers.d/`, à éditer avec
-`visudo` (qui valide la syntaxe avant d'enregistrer : une erreur ici peut vous verrouiller dehors).
+| Chiffre | Calcul | Signifie |
+|---|---|---|
+| 7 | 4+2+1 | lire, écrire, exécuter |
+| 6 | 4+2 | lire, écrire |
+| 5 | 4+1 | lire, exécuter |
+| 4 | 4 | lire seulement |
+| 0 | 0 | rien |
 
-### 7.4 Au-delà des neuf bits
+Donc `750` = le propriétaire a tout, le groupe peut lire et entrer, les autres n'ont rien.
+Pour un site web, `644` sur les fichiers et `755` sur les dossiers est le réglage habituel.
 
-Les **ACL** (`setfacl`, `getfacl`) permettent des droits par utilisateur supplémentaires.
-Les **attributs étendus** (`chattr +i` rend un fichier immuable, même pour root).
-Les **capabilities** découpent les pouvoirs de root en une quarantaine de privilèges séparés :
-c'est ainsi qu'un serveur web peut écouter sur le port 80 sans être root
-(`setcap 'cap_net_bind_service=+ep' /usr/bin/monserveur`).
+### Pourquoi chaque service a son propre compte
+
+Vous verrez des comptes bizarres comme `www-data`, `mysql`, `postgres`. Ce ne sont pas des
+humains : ce sont des comptes créés pour un service et un seul, sans mot de passe et sans
+possibilité de se connecter.
+
+L'intérêt est simple. Si quelqu'un exploite une faille de votre site web, il se retrouve avec les
+droits de `www-data`, qui ne peut presque rien faire, et pas avec ceux de root. Dans le
+restaurant : le badge du plongeur n'ouvre pas le coffre.
+
+**Aucun service ne doit tourner en root.** C'est la règle de sécurité la plus rentable de toute
+cette leçon.
 
 ---
 
-## 8. Processus, mémoire et ordonnancement
+## 10. Les programmes en train de tourner
 
-### 8.1 Anatomie d'un processus
+### Processus, mémoire, processeur
 
-Un processus possède un PID, un parent (PPID), un utilisateur effectif, un espace mémoire virtuel,
-une table de descripteurs de fichiers ouverts, et un ou plusieurs fils d'exécution (*threads*).
-Il naît par `fork` (duplication du parent) suivi d'`execve` (remplacement du code).
+Un **processus** est un programme en cours d'exécution. Il porte un numéro unique, le **PID**.
+Il occupe de la **mémoire vive** (le plan de travail) et consomme du temps de **processeur**
+(les mains qui travaillent).
 
-**États** : R (en cours ou prêt), S (sommeil interruptible, l'état normal d'un démon en attente),
-D (sommeil non interruptible, typiquement bloqué sur une entrée/sortie disque), Z (zombie,
-terminé mais non récupéré par son parent), T (arrêté).
+Un détail utile : un processus peut se diviser en plusieurs **fils d'exécution** (*threads*),
+qui travaillent en parallèle en partageant le même plan de travail. Un processus, c'est un
+cuisinier avec son poste ; les threads, ce sont ses deux mains qui font deux choses à la fois.
 
-Un pic de processus en état `D` signale presque toujours un problème de disque ou de stockage
-réseau, pas un manque de CPU.
-
-### 8.2 Observer
+### Regarder ce qui tourne
 
 ```bash
-ps aux --sort=-%mem | head          # les plus gros consommateurs de mémoire
-top    # ou mieux : htop
-pidstat 1                           # consommation par processus, seconde par seconde
-lsof -p 1234                        # tout ce qu'ouvre le processus 1234
-ss -lntp                            # qui écoute sur quels ports, avec le processus
-uptime                              # charge moyenne sur 1, 5 et 15 minutes
-vmstat 1                            # mémoire, swap, entrées/sorties, CPU
-iostat -xz 1                        # saturation des disques
+top                       # tableau de bord en direct (q pour quitter)
+htop                      # la même chose, en plus lisible : à installer
+ps aux --sort=-%mem | head   # les 10 programmes qui prennent le plus de mémoire
+uptime                    # depuis quand la machine tourne, et sa charge
 ```
 
-La **charge moyenne** (*load average*) compte les processus prêts à tourner **plus** ceux bloqués
-en entrée/sortie. Une charge de 4,00 sur une machine à 4 cœurs est un plein régime sain. La même
-valeur sur 1 cœur signale une file d'attente.
+### Comprendre la "charge"
 
-### 8.3 Signaux
+`uptime` affiche trois nombres, par exemple `0.52, 1.10, 0.98`. C'est la **charge moyenne** sur
+1, 5 et 15 minutes : le nombre moyen de tâches qui attendaient leur tour.
+
+Pour l'interpréter, comparez-la au nombre de cœurs de votre processeur (`nproc` vous le donne).
+Sur une machine à 4 cœurs, une charge de 4 signifie plein régime, sans file d'attente. La même
+charge de 4 sur 1 cœur signifie que ça bouchonne sérieusement.
+
+### La mémoire
 
 ```bash
-kill -TERM 1234    # demande polie d'arrêt, le programme peut nettoyer (signal 15, défaut)
-kill -HUP 1234     # convention : relire la configuration
-kill -KILL 1234    # exécution immédiate par le noyau, aucun nettoyage (signal 9, dernier recours)
-pkill -f 'node server.js'
+free -h
 ```
 
-### 8.4 cgroups et namespaces
+**Ne paniquez pas si "free" est presque à zéro.** Linux se sert de toute la mémoire inutilisée
+comme cache : il y garde des morceaux de fichiers récemment lus, au cas où. Cette mémoire est
+rendue instantanément dès qu'un programme en a besoin. La seule colonne à regarder s'appelle
+**available**.
 
-Ces deux mécanismes du noyau sont la fondation de tout le monde des conteneurs, et ils servent
-déjà sans Docker.
-
-Les **cgroups** (*control groups*) limitent et comptabilisent les ressources d'un groupe de
-processus : mémoire maximale, part de CPU, débit disque. systemd place chaque service dans son
-propre cgroup, donc `MemoryMax=512M` dans une unité suffit à plafonner un service.
-
-Les **namespaces** isolent la *vue* qu'un processus a du système : ses propres PID, son propre
-réseau, ses propres points de montage, ses propres utilisateurs. Un processus dans un namespace
-PID se croit seul avec le PID 1.
-
-Un conteneur, ce n'est rien d'autre que : des namespaces pour l'isolation, des cgroups pour les
-quotas, et une image de système de fichiers en couches.
-
-### 8.5 Le tueur de mémoire
-
-Quand la RAM et le swap sont épuisés, le noyau déclenche l'**OOM killer** et tue le processus au
-score le plus élevé, souvent la base de données, qui est le plus gros consommateur. À vérifier
-systématiquement après un arrêt inexpliqué :
+Si en revanche la mémoire manque vraiment, le noyau tue le programme le plus gourmand pour
+sauver la machine. C'est souvent la base de données. Pour vérifier après un arrêt inexpliqué :
 
 ```bash
 dmesg -T | grep -i 'killed process'
-journalctl -k | grep -i oom
 ```
+
+Si vous y trouvez une ligne, votre machine manque de mémoire : il faut en ajouter ou réduire les
+réglages du programme concerné.
+
+### Arrêter un programme
+
+```bash
+kill 1234        # demande poliment au processus 1234 de s'arrêter et de ranger
+kill -9 1234     # le supprime brutalement, sans lui laisser ranger : dernier recours
+```
+
+Utilisez toujours la première forme d'abord. La seconde peut laisser des fichiers dans un état
+incohérent, ce qui est particulièrement risqué pour une base de données.
 
 ---
 
-## 9. Le réseau
+## 11. Le réseau : adresses, noms et ports
 
-### 9.1 Les couches, en pratique
+### Trois notions, dans l'ordre
 
-| Couche | Élément | Outils |
+**L'adresse IP** est le numéro d'une machine sur le réseau, par exemple `93.184.216.34`. C'est
+l'adresse postale : précise, mais impossible à retenir.
+
+**Le nom de domaine** est le nom lisible, par exemple `example.com`. C'est le nom dans
+l'annuaire.
+
+**Le DNS** est l'annuaire lui-même. Quand vous tapez un nom, votre machine interroge le DNS pour
+obtenir l'adresse IP correspondante. Si le DNS est mal configuré, le site est injoignable alors
+que le serveur fonctionne parfaitement : c'est une panne très courante et très déroutante.
+
+```bash
+dig +short example.com     # à quelle adresse IP correspond ce nom ?
+ping example.com           # cette machine répond-elle ?
+```
+
+### Les ports
+
+Une machine héberge souvent plusieurs services : un site web, une base de données, un accès à
+distance. Comment savoir à qui on s'adresse ? Par le **port**, un numéro entre 1 et 65535. C'est
+le numéro du guichet à l'accueil.
+
+| Port | Service | À quoi ça sert |
 |---|---|---|
-| Lien | Carte réseau, adresse MAC | `ip link`, `ethtool` |
-| Réseau | IP, routage | `ip addr`, `ip route`, `ping`, `traceroute` |
-| Transport | TCP (fiable, ordonné), UDP (rapide, sans garantie) | `ss`, `nc` |
-| Application | HTTP, SSH, SMTP, DNS, PostgreSQL | `curl`, `dig`, `psql` |
+| 22 | SSH | Se connecter au serveur à distance en ligne de commande |
+| 80 | HTTP | Le web non chiffré (on redirige vers le 443) |
+| 443 | HTTPS | Le web chiffré, celui du cadenas dans le navigateur |
+| 3306 | MySQL / MariaDB | Une base de données |
+| 5432 | PostgreSQL | Une autre base de données |
+| 6379 | Redis | Un cache |
 
-### 9.2 Ports et sockets
-
-Un service écoute sur un couple adresse IP + port. Les ports sous 1024 sont privilégiés (root ou
-capability requise). Les repères à connaître : 22 SSH, 25 SMTP, 53 DNS, 80 HTTP, 443 HTTPS,
-3306 MySQL/MariaDB, 5432 PostgreSQL, 6379 Redis, 27017 MongoDB, 9200 Elasticsearch.
-
-```bash
-ss -lntup                          # tout ce qui écoute, TCP et UDP, avec le processus
-ss -s                              # statistiques de connexions
-curl -I https://example.com        # en-têtes HTTP seulement
-dig +short example.com             # résolution DNS
-traceroute example.com
-```
-
-**Règle de sécurité fondamentale** : une base de données ne doit écouter que sur `127.0.0.1` ou
-sur un réseau privé, jamais sur `0.0.0.0`, sauf nécessité explicite et pare-feu en place.
-Vérifiez la colonne d'adresse locale dans `ss -lntp`.
-
-### 9.3 Pare-feu
-
-Le filtrage est dans le noyau (Netfilter). Les outils d'administration sont des interfaces vers
-lui : `nftables` (moderne), `iptables` (historique), `ufw` (simple, Debian/Ubuntu),
-`firewalld` (RHEL).
+Une adresse particulière revient tout le temps : `127.0.0.1`, aussi appelée `localhost`. Elle
+signifie "moi-même, cette machine". Un service qui écoute uniquement sur `127.0.0.1` n'est
+joignable que depuis la machine elle-même, jamais depuis Internet. **C'est le bon réglage pour
+une base de données.**
 
 ```bash
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 22/tcp
-ufw allow 80,443/tcp
-ufw enable
-ufw status verbose
+ss -lntp     # quels services écoutent, sur quels ports, et lesquels sont exposés
 ```
 
-Le principe : tout fermer par défaut, ouvrir uniquement ce qui est nécessaire. Et **toujours
-autoriser SSH avant d'activer le pare-feu**, sinon la session en cours est coupée et le serveur
-devient inaccessible.
+Dans le résultat, regardez la colonne d'adresse locale : `127.0.0.1:5432` est sûr,
+`0.0.0.0:5432` signifie "ouvert à tout le monde" et mérite une vérification immédiate.
+
+### Le pare-feu
+
+Le **pare-feu** décide quels ports acceptent des connexions venant de l'extérieur. C'est le
+videur à la porte. La bonne pratique est de tout fermer, puis d'ouvrir uniquement le nécessaire.
+
+```bash
+sudo ufw default deny incoming    # par défaut, on refuse tout ce qui entre
+sudo ufw default allow outgoing   # on autorise ce qui sort
+sudo ufw allow 22/tcp             # on ouvre SSH : À FAIRE EN PREMIER
+sudo ufw allow 80,443/tcp         # on ouvre le web
+sudo ufw enable                   # on active le pare-feu
+sudo ufw status verbose           # on vérifie
+```
+
+**Attention, erreur classique et douloureuse** : si vous activez le pare-feu sans avoir autorisé
+le port 22 d'abord, votre propre connexion est coupée et vous ne pouvez plus entrer. Sur une
+machine distante, cela veut dire tout réinstaller.
 
 ---
 
-## 10. La pile logicielle d'un serveur : la carte des composants
+# Partie 3 : les composants d'un serveur
 
-Un serveur applicatif typique assemble sept familles de composants. Voici la carte complète, avec
-les représentants les plus courants.
+## 12. Qui fait quoi dans la pile
+
+On appelle **pile** (*stack* en anglais) l'ensemble des logiciels empilés pour faire fonctionner
+un site ou une application. Voici la pile complète, dans l'ordre où une demande la traverse.
 
 ```
-   Internet
-      │
-      ▼
-┌───────────────┐   1. Répartiteur / proxy inverse
-│ HAProxy       │      Nginx, HAProxy, Traefik, Caddy
-│ Nginx         │      Répartit la charge, termine le TLS, met en cache
-└───────┬───────┘
-        ▼
-┌───────────────┐   2. Serveur web
-│ Apache        │      Apache httpd, Nginx, Caddy, LiteSpeed
-│ Nginx         │      Sert les fichiers statiques, parle HTTP
-└───────┬───────┘
-        ▼
-┌───────────────┐   3. Serveur d'application / runtime
-│ PHP-FPM       │      PHP-FPM, Node.js, Gunicorn/uWSGI (Python),
-│ Node, Tomcat  │      Puma (Ruby), Tomcat (Java), .NET Kestrel
-└───┬───────┬───┘      Exécute votre code métier
-    │       │
-    ▼       ▼
-┌────────┐ ┌────────┐  4. Cache mémoire        5. Base de données
-│ Redis  │ │MariaDB │     Redis, Memcached        MariaDB/MySQL, PostgreSQL,
-│Memcach.│ │Postgres│                             SQLite, MongoDB
-└────────┘ └────────┘
-    │
-    ▼
-┌───────────────┐   6. File de messages / tâches asynchrones
-│ RabbitMQ      │      RabbitMQ, Kafka, Redis Streams, NATS
-│ Kafka         │      Découple les traitements longs
-└───────────────┘
-        +
-┌───────────────┐   7. Services transverses
-│ Postfix (SMTP)│      Messagerie, DNS (BIND, Unbound), stockage objet (MinIO),
-│ Prometheus    │      recherche (Elasticsearch, OpenSearch), supervision
-└───────────────┘
+   Le visiteur, dans son navigateur
+                │
+                ▼
+   1. LE PARE-FEU          le videur : il laisse entrer ou non
+                │
+                ▼
+   2. LE SERVEUR WEB       Apache ou Nginx
+      le serveur de salle : il prend la commande.
+      Si le plat est déjà prêt (une image, un fichier), il le donne tout de suite.
+                │
+                ▼
+   3. L'APPLICATION        PHP, Node.js, Python, Java...
+      la cuisine : elle prépare la réponse sur mesure
+             │        │
+             ▼        ▼
+   4. LE CACHE      5. LA BASE DE DONNÉES
+      Redis            MariaDB ou PostgreSQL
+      le frigo         l'entrepôt : tout y est rangé durablement
+                │
+                ▼
+   6. LA FILE DE MESSAGES   RabbitMQ
+      le carnet : les tâches longues, faites plus tard
 ```
 
-### Les acronymes de pile
+Quelques sigles que vous verrez partout, et qui ne désignent que des combinaisons courantes de
+cette pile :
 
-**LAMP** : Linux + Apache + MySQL/MariaDB + PHP. La pile historique du web, celle de WordPress.
-**LEMP** : le E se prononce "engine-x", donc Linux + Nginx + MySQL + PHP. Même chose avec Nginx.
-**LAPP** : la variante PostgreSQL.
-**MEAN/MERN** : MongoDB + Express + Angular ou React + Node.js, la pile tout-JavaScript.
+- **LAMP** : Linux + Apache + MySQL/MariaDB + PHP. La pile historique du web, celle de WordPress.
+- **LEMP** : la même, avec Nginx à la place d'Apache (le E se prononce "eun-jinn-x").
+- **MEAN** ou **MERN** : la pile où tout est en JavaScript, avec MongoDB et Node.js.
 
-Ces sigles décrivent des choix, pas des lois. On mélange librement : Nginx en frontal qui délègue
-à Apache, PostgreSQL pour les données métier et Redis pour les sessions, c'est une combinaison
-parfaitement courante.
+Ce ne sont pas des règles. On mélange librement selon les besoins.
 
 ---
 
-## 11. Les serveurs web : Apache et Nginx
+## 13. Le serveur web : Apache et Nginx
 
-### 11.1 Le rôle d'un serveur web
+### Ce que fait un serveur web
 
-Il écoute sur 80 et 443, interprète le protocole HTTP, décide si la requête correspond à un
-fichier sur disque (contenu statique) ou doit être transmise à un programme (contenu dynamique),
-gère le TLS, la compression, les en-têtes de cache et les journaux d'accès.
+Un **serveur web** est le logiciel qui écoute sur les ports 80 et 443, reçoit les demandes des
+navigateurs et renvoie les réponses. C'est le serveur de salle.
 
-### 11.2 Apache HTTP Server
+Il fait la différence entre deux sortes de contenus :
 
-Né en 1995, c'est le serveur web le plus documenté au monde. Son architecture repose sur des
-**MPM** (*Multi-Processing Modules*), interchangeables, qui déterminent comment il traite la
-concurrence :
+- Le **contenu statique** : un fichier qui existe déjà sur le disque et qu'on renvoie tel quel.
+  Une image, une feuille de style, un fichier JavaScript. C'est le plat déjà en vitrine : on le
+  donne immédiatement, ça ne coûte presque rien.
+- Le **contenu dynamique** : une page qui doit être fabriquée maintenant, parce qu'elle dépend
+  du visiteur ou des données du moment. Votre panier, votre profil, la liste des produits en
+  stock. C'est le plat à cuisiner : le serveur web passe la commande à la cuisine.
 
-| MPM | Modèle | Usage |
-|---|---|---|
-| `prefork` | Un processus par connexion, sans threads | Obligatoire avec `mod_php` (bibliothèques non thread-safe). Gourmand en RAM |
-| `worker` | Processus multiples, plusieurs threads chacun | Moins de mémoire par connexion |
-| `event` | Comme worker, mais un thread dédié gère les connexions en attente | Le défaut moderne, recommandé |
+Il s'occupe aussi du **HTTPS** (le chiffrement, le cadenas dans le navigateur), de la
+compression, et il note chaque visite dans son journal.
 
-Le MPM `event` a comblé l'essentiel de l'écart de performance avec Nginx sur les connexions
-persistantes, qui était le reproche historique fait à Apache.
+Les deux logiciels dominants sont Apache et Nginx. Ils font le même travail avec deux
+philosophies différentes.
 
-**Sa force réelle** : le système de modules dynamiques et la configuration décentralisée.
-`mod_rewrite` pour la réécriture d'URL, `mod_ssl`, `mod_proxy`, `mod_security` (pare-feu
-applicatif). Et surtout les fichiers `.htaccess` : chaque dossier peut porter sa propre
-configuration, sans droits d'administration ni redémarrage. C'est ce qui a fait le succès
-d'Apache chez les hébergeurs mutualisés, et c'est aussi son coût principal en performance,
-puisqu'Apache doit chercher un `.htaccess` dans chaque dossier du chemin, à chaque requête.
-Si vous contrôlez le serveur, désactivez-les avec `AllowOverride None` et mettez les règles
-dans la configuration principale.
+### Apache
 
-**Organisation des fichiers (Debian/Ubuntu)** :
+Né en 1995, c'est le plus ancien et le plus documenté. Sur Internet, la quasi-totalité des vieux
+tutoriels parlent de lui.
+
+**Sa façon de travailler.** Historiquement, Apache attribue un employé à chaque client : un
+processus par connexion. C'est simple et robuste, mais chaque employé occupe de la place, et
+mille visiteurs simultanés font mille employés. Apache a depuis appris des modes plus économes
+(le mode `event`, qui est le réglage moderne recommandé et fait travailler quelques employés très
+efficaces), mais sa réputation de gourmandise en mémoire vient de là.
+
+**Ses deux forces.**
+
+1. Les **modules** : des fonctions qu'on ajoute à la demande (réécriture d'adresses, chiffrement,
+   pare-feu applicatif). Il y en a pour tout.
+2. Les fichiers **`.htaccess`** : un petit fichier de réglages qu'on dépose dans n'importe quel
+   dossier, sans être administrateur et sans redémarrer le service. C'est ce qui a fait le succès
+   d'Apache chez les hébergeurs bon marché, où chaque client règle son coin sans toucher au
+   reste.
+
+**Son coût.** Ces `.htaccess` obligent Apache à vérifier, à chaque demande et dans chaque dossier
+du chemin, si un tel fichier existe. C'est du travail répété inutilement. Si vous êtes
+administrateur de votre serveur, désactivez-les et mettez vos règles dans la configuration
+principale.
+
+**Où sont les fichiers** (sur Debian et Ubuntu) :
 
 ```
-/etc/apache2/apache2.conf          configuration principale
-/etc/apache2/sites-available/      tous les hôtes virtuels définis
-/etc/apache2/sites-enabled/        liens symboliques vers ceux qui sont actifs
-/etc/apache2/mods-available/       modules disponibles
-/var/log/apache2/access.log        journal d'accès
-/var/log/apache2/error.log         journal d'erreurs
+/etc/apache2/apache2.conf         le réglage principal
+/etc/apache2/sites-available/     un fichier par site défini
+/etc/apache2/sites-enabled/       les sites réellement activés
+/var/log/apache2/access.log       le journal des visites
+/var/log/apache2/error.log        le journal des erreurs
 ```
 
-Sur RHEL, tout est dans `/etc/httpd/` et le service s'appelle `httpd`.
-
-**Un hôte virtuel type** :
-
-```apache
-<VirtualHost *:443>
-    ServerName site.example.com
-    DocumentRoot /srv/site/public
-
-    SSLEngine on
-    SSLCertificateFile /etc/letsencrypt/live/site.example.com/fullchain.pem
-    SSLCertificateKeyFile /etc/letsencrypt/live/site.example.com/privkey.pem
-
-    <Directory /srv/site/public>
-        AllowOverride None
-        Require all granted
-    </Directory>
-
-    # Délégation du PHP à PHP-FPM via une socket Unix
-    <FilesMatch \.php$>
-        SetHandler "proxy:unix:/run/php/php8.3-fpm.sock|fcgi://localhost"
-    </FilesMatch>
-
-    ErrorLog ${APACHE_LOG_DIR}/site-error.log
-    CustomLog ${APACHE_LOG_DIR}/site-access.log combined
-</VirtualHost>
-```
+Sur Red Hat, tout est dans `/etc/httpd/` et le service s'appelle `httpd` au lieu d'`apache2`.
 
 ```bash
-a2ensite site.conf && a2enmod ssl proxy_fcgi
-apachectl configtest       # TOUJOURS avant de recharger
-systemctl reload apache2
+sudo apachectl configtest    # vérifie que la configuration ne contient pas d'erreur
+sudo systemctl reload apache2
 ```
 
-### 11.3 Nginx
+Prenez l'habitude de toujours vérifier avant de recharger. Une erreur de syntaxe recharge un
+service cassé, et le site tombe.
 
-Créé en 2004 par Igor Sysoev pour résoudre le "problème des 10 000 connexions simultanées".
-Son architecture est radicalement différente : un processus maître (qui lit la configuration et
-possède les ports privilégiés) et un petit nombre de **processus travailleurs**, généralement un
-par cœur. Chaque travailleur est **mono-thread** et gère des milliers de connexions par une
-**boucle d'événements non bloquante** basée sur `epoll`.
+### Nginx
 
-La différence de fond : Apache en prefork alloue une pile mémoire complète par connexion (de
-l'ordre de plusieurs mégaoctets), Nginx alloue une structure de quelques kilooctets. Sur dix
-mille connexions lentes ou maintenues ouvertes, l'écart devient décisif.
+Créé en 2004 pour répondre à un problème précis : tenir dix mille visiteurs en même temps sur une
+machine modeste.
 
-**En contrepartie**, Nginx n'exécute jamais de code applicatif dans son processus. Il n'existe pas
-d'équivalent de `mod_php` : le PHP part toujours vers PHP-FPM. Et il n'y a pas de `.htaccess` :
-toute la configuration est centralisée, ce qui est plus rapide et plus sûr, mais moins souple
-pour un hébergement partagé.
+**Sa façon de travailler.** Au lieu d'un employé par client, Nginx emploie quelques serveurs de
+salle (un par cœur du processeur) qui ne restent jamais plantés à attendre. Dès qu'une table
+n'a pas besoin d'eux, ils passent à la suivante, et reviennent quand quelque chose se passe.
+C'est le principe de la **boucle d'événements** : on ne bloque jamais, on réagit.
 
-**Configuration type** :
+Résultat concret : là où l'ancien Apache réservait plusieurs mégaoctets de mémoire par visiteur,
+Nginx en utilise quelques kilooctets. Sur des connexions lentes ou nombreuses, l'écart est
+énorme.
+
+**Ses limites.** Nginx n'exécute jamais lui-même le code de votre application : il le transmet
+toujours à un programme séparé. Et il n'existe pas de `.htaccess` : toute la configuration est
+centralisée, ce qui est plus rapide et plus sûr, mais moins souple si plusieurs personnes se
+partagent la machine.
+
+```bash
+sudo nginx -t                # vérifie la configuration
+sudo systemctl reload nginx
+```
+
+### Un exemple de configuration, ligne par ligne
 
 ```nginx
-upstream app_backend {
-    least_conn;
-    server 10.0.0.11:3000 max_fails=3 fail_timeout=30s;
-    server 10.0.0.12:3000 max_fails=3 fail_timeout=30s;
-}
-
 server {
-    listen 443 ssl http2;
-    server_name site.example.com;
-    root /srv/site/public;
+    listen 443 ssl;                      # écoute sur le port du web sécurisé
+    server_name site.example.com;        # ne répond que pour ce nom de domaine
+    root /srv/site/public;               # les fichiers du site sont ici
 
     ssl_certificate     /etc/letsencrypt/live/site.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/site.example.com/privkey.pem;
+    # les deux lignes ci-dessus : le certificat qui prouve l'identité du site
 
-    # Les fichiers statiques : servis directement, avec un cache long
-    location ~* \.(jpg|png|css|js|woff2)$ {
-        expires 30d;
-        access_log off;
+    location ~* \.(jpg|png|css|js)$ {    # pour les images et fichiers de style
+        expires 30d;                     # dis au navigateur de les garder 30 jours
     }
 
-    # Le reste : transmis à l'application
-    location / {
-        proxy_pass http://app_backend;
+    location / {                         # pour tout le reste
+        proxy_pass http://127.0.0.1:3000;   # transmets à l'application, sur le port 3000
         proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;   # dis-lui qui est le vrai visiteur
     }
 }
 
 server {
-    listen 80;
+    listen 80;                           # sur le port non sécurisé
     server_name site.example.com;
-    return 301 https://$host$request_uri;
+    return 301 https://$host$request_uri;   # renvoie tout le monde vers la version sécurisée
 }
 ```
 
-```bash
-nginx -t                   # test de configuration, indispensable
-systemctl reload nginx
-```
+Deux mots utiles rencontrés ici :
 
-### 11.4 Comment choisir
+- **Proxy inverse** (*reverse proxy*) : un serveur placé devant d'autres, qui reçoit les demandes
+  et les transmet à celui qui convient. C'est le rôle de `proxy_pass`. Le maître d'hôtel qui
+  répartit les clients entre les salles.
+- **Certificat** : un fichier signé par une autorité reconnue, qui prouve au navigateur qu'il
+  parle bien au vrai site. Let's Encrypt en délivre gratuitement, renouvelés automatiquement par
+  l'outil `certbot`.
 
-| Critère | Apache | Nginx |
-|---|---|---|
-| Fichiers statiques, forte concurrence | Bon (MPM event) | Excellent |
-| Proxy inverse, répartition de charge | Correct | Excellent, c'est son terrain |
-| Configuration par dossier (`.htaccess`) | Oui | Non |
-| Modules dynamiques riches | Très riche | Plus limité en version libre |
-| Hébergement mutualisé | Idéal | Peu adapté |
-| Mémoire par connexion | Élevée en prefork | Très faible |
+### Lequel choisir
 
-En pratique, une architecture très répandue met **Nginx en frontal** (TLS, statique, répartition)
-devant **Apache ou un runtime applicatif** en arrière-plan. Les deux ne sont pas concurrents dans
-ce montage, ils sont complémentaires. Et si le choix reste ouvert sur un projet neuf : Nginx pour
-une API ou une application moderne, Apache si vous héritez d'un écosystème PHP avec des
-`.htaccess` partout.
+| Votre situation | Le choix raisonnable |
+|---|---|
+| Un nouveau projet, une API, une application moderne | Nginx |
+| Un site WordPress ou PHP hérité, avec des `.htaccess` partout | Apache |
+| Beaucoup de visiteurs simultanés, beaucoup d'images | Nginx |
+| Vous suivez un tutoriel qui parle d'Apache et vous débutez | Apache, ne compliquez pas |
 
----
-
-## 12. Les bases de données relationnelles : MariaDB/MySQL et PostgreSQL
-
-### 12.1 Ce que fait un SGBD
-
-Un système de gestion de base de données stocke des données durablement, garantit leur cohérence
-même en cas de coupure de courant, et permet à des centaines de clients de lire et écrire
-simultanément sans se marcher dessus. Il assure les propriétés **ACID** : atomicité (une
-transaction passe entièrement ou pas du tout), cohérence, isolation (les transactions concurrentes
-ne se voient pas mutuellement en cours de route), durabilité (une transaction validée survit à un
-crash).
-
-Le mécanisme central de la durabilité est le **journal d'écriture anticipée** (*Write-Ahead Log*) :
-avant de modifier les fichiers de données, le moteur écrit l'intention dans un journal séquentiel
-et le force sur disque. Après un crash, il rejoue ce journal pour retrouver un état cohérent.
-
-### 12.2 MySQL et MariaDB
-
-MySQL est né en 1995. Après son rachat par Oracle en 2010, ses créateurs originaux ont lancé
-**MariaDB**, un fork libre resté largement compatible : mêmes commandes, même protocole réseau,
-mêmes bibliothèques clientes. Sur Debian et Ubuntu, `apt install mysql-server` installe
-souvent MariaDB. Les deux ont divergé depuis (MariaDB a ses propres moteurs et son propre système
-de réplication), mais pour un usage applicatif standard ils restent interchangeables.
-
-**Architecture** : un seul processus (`mysqld`) et **un thread par connexion**. Les threads sont
-plus légers que les processus, donc MySQL supporte nativement un grand nombre de connexions
-directes, ce qui explique en partie sa réputation de simplicité opérationnelle.
-
-Sa particularité historique est la séparation entre l'analyseur SQL et les **moteurs de stockage**
-enfichables :
-
-- **InnoDB** : le seul choix raisonnable aujourd'hui. Transactionnel, verrouillage par ligne,
-  clés étrangères, récupération après crash.
-- **MyISAM** : ancien, verrouillage par table, non transactionnel. À éviter, ne subsiste que dans
-  du code hérité.
-- **Aria**, **ColumnStore** (analytique), **Memory** : spécifiques à MariaDB ou à des besoins
-  particuliers.
-
-**Fichiers importants** :
-
-```
-/etc/mysql/                        configuration (my.cnf, conf.d/)
-/var/lib/mysql/                    données
-/var/log/mysql/error.log           journal d'erreurs
-/var/lib/mysql/ib_logfile*         journal InnoDB
-```
-
-**Le réglage qui compte plus que tous les autres** : `innodb_buffer_pool_size`. C'est le cache en
-RAM des pages de données et d'index. Sur un serveur dédié à la base, comptez 60 à 70 % de la RAM
-totale. Un buffer pool trop petit transforme chaque requête en lectures disque.
-
-```sql
-SHOW ENGINE INNODB STATUS\G
-SHOW PROCESSLIST;                          -- requêtes en cours
-SHOW VARIABLES LIKE 'innodb_buffer_pool%';
-EXPLAIN SELECT * FROM commandes WHERE client_id = 42;
-```
-
-```bash
-mysql_secure_installation                  # à exécuter après toute installation
-mysqldump -u root -p --single-transaction --all-databases > sauvegarde.sql
-```
-
-### 12.3 PostgreSQL
-
-Descendant du projet POSTGRES de Berkeley (années 1980), PostgreSQL est réputé pour sa rigueur et
-sa richesse fonctionnelle. Là où MySQL a longtemps privilégié la vitesse sur les cas simples,
-PostgreSQL a privilégié la correction et l'expressivité.
-
-**Architecture** : **un processus par connexion**, forké par le processus superviseur
-(*postmaster*). C'est plus coûteux qu'un thread, d'où une règle pratique importante : au-delà de
-quelques centaines de connexions, on interpose un **gestionnaire de pool** comme PgBouncer, qui
-multiplexe des milliers de connexions clientes sur quelques dizaines de connexions serveur.
-Autour tournent des processus auxiliaires : `checkpointer`, `background writer`, `WAL writer`,
-`autovacuum launcher`.
-
-**MVCC et VACUUM** : PostgreSQL implémente le contrôle de concurrence multiversion en conservant
-plusieurs versions physiques d'une même ligne. Une écriture ne modifie pas la ligne existante,
-elle en crée une nouvelle version et marque l'ancienne comme morte. Conséquence : les lecteurs ne
-bloquent jamais les écrivains et réciproquement, mais les versions mortes s'accumulent. Le
-processus **autovacuum** les recycle en arrière-plan. Un autovacuum mal réglé ou saturé provoque
-le fameux *table bloat* : une table qui occupe dix fois sa taille utile. C'est le principal point
-de surveillance spécifique à PostgreSQL.
-
-**Ce qu'il apporte de plus** : types de données riches (JSONB indexable, tableaux, plages,
-géométries), index variés (B-tree, GIN, GiST, BRIN), CTE récursives, fonctions de fenêtrage,
-extensions (**PostGIS** pour le géospatial, **TimescaleDB** pour les séries temporelles,
-**pgvector** pour la recherche vectorielle), et des contraintes d'intégrité réellement appliquées.
-
-**Fichiers importants** :
-
-```
-/etc/postgresql/16/main/postgresql.conf    configuration du moteur
-/etc/postgresql/16/main/pg_hba.conf        authentification : QUI peut se connecter, D'OÙ, COMMENT
-/var/lib/postgresql/16/main/               données
-/var/lib/postgresql/16/main/pg_wal/        journaux d'écriture anticipée
-```
-
-`pg_hba.conf` est le fichier le plus souvent responsable des erreurs de connexion. Chaque ligne
-associe un type de connexion, une base, un utilisateur, une adresse source et une méthode
-(`scram-sha-256`, `peer`, `md5`). Les règles sont évaluées dans l'ordre, la première qui
-correspond gagne.
-
-```sql
-SELECT * FROM pg_stat_activity;                 -- sessions et requêtes en cours
-SELECT * FROM pg_stat_user_tables;              -- statistiques, dont le dernier vacuum
-EXPLAIN (ANALYZE, BUFFERS) SELECT ...;          -- plan d'exécution réel
-```
-
-```bash
-sudo -u postgres psql
-pg_dump -Fc mabase > mabase.dump               # format compressé, restaurable sélectivement
-pg_basebackup -D /sauvegarde -Fp -Xs -P        # copie physique complète, base d'un PITR
-```
-
-**Le réglage principal** : `shared_buffers`, environ 25 % de la RAM (PostgreSQL s'appuie
-volontairement aussi sur le cache disque du noyau, contrairement à InnoDB), plus
-`effective_cache_size` à environ 50 à 75 % pour informer le planificateur, et `work_mem` par
-opération de tri.
-
-### 12.4 Tableau comparatif
-
-| | MariaDB / MySQL | PostgreSQL |
-|---|---|---|
-| Modèle de concurrence | Thread par connexion | Processus par connexion |
-| Concurrence | MVCC via InnoDB | MVCC natif, VACUUM requis |
-| Moteurs de stockage | Enfichables (InnoDB, Aria...) | Un seul, intégré |
-| Conformité SQL | Bonne, avec des tolérances | Très stricte |
-| JSON | Type JSON, indexation limitée | JSONB avec index GIN, très puissant |
-| Extensibilité | Modérée | Extensions, types et opérateurs personnalisés |
-| Réplication | Simple à mettre en place, très mature | Streaming physique, logique, PITR |
-| Terrain de prédilection | Web classique, CMS, lectures massives | Métier complexe, données géo, analytique, intégrité forte |
-| Écosystème | WordPress, Drupal, Magento | Django, Rails moderne, data engineering |
-
-**Comment choisir** : PostgreSQL est le défaut raisonnable pour une nouvelle application, surtout
-si le modèle de données est riche ou si l'intégrité compte. MariaDB s'impose quand l'écosystème
-l'exige (WordPress et la plupart des CMS PHP), quand l'équipe le maîtrise déjà, ou pour des charges
-de lecture simples et massives. La différence de performance brute entre les deux est aujourd'hui
-bien plus faible que la différence entre une requête indexée et une requête qui ne l'est pas.
-
-### 12.5 SQLite, le cas particulier
-
-SQLite n'est pas un serveur : c'est une bibliothèque qui écrit dans un fichier unique, sans
-processus ni port. Parfait pour les tests, les applications embarquées, la configuration locale.
-Avec le mode WAL, il tient très bien des charges de lecture élevées, mais il ne gère qu'un
-écrivain à la fois et ne convient pas à plusieurs serveurs applicatifs partageant la même base.
+Et sachez qu'un montage très répandu utilise **les deux** : Nginx à l'entrée, qui gère le
+chiffrement et les images, et Apache derrière pour l'application. Ils ne sont pas rivaux.
 
 ---
 
-## 13. Caches, NoSQL, files de messages et moteurs de recherche
+## 14. Les bases de données : MariaDB et PostgreSQL
 
-### 13.1 Redis
+### Pourquoi pas simplement des fichiers ?
 
-Base de données clés-valeurs en mémoire, mono-thread pour les commandes (donc chaque opération est
-atomique sans verrou), avec des structures de données évoluées : chaînes, listes, ensembles,
-ensembles ordonnés, tables de hachage, flux, HyperLogLog. Latence de l'ordre de la fraction de
-milliseconde.
+On pourrait ranger ses données dans des fichiers. Mais dès que plusieurs personnes écrivent en
+même temps, tout se casse : deux modifications simultanées s'écrasent, une coupure de courant en
+plein milieu laisse un fichier à moitié écrit, et retrouver une ligne parmi un million demande de
+tout relire.
 
-**Usages typiques** : cache de résultats de requêtes SQL, stockage des sessions utilisateur,
-files de tâches (Sidekiq, Bull, Celery), compteurs et limitation de débit, verrous distribués,
-classements en temps réel.
+Une **base de données** résout ces trois problèmes. C'est l'entrepôt avec un magasinier : lui
+seul touche aux rayonnages, il sert plusieurs personnes à la fois sans confusion, et il sait
+exactement où se trouve chaque chose.
 
-Persistance optionnelle en deux modes : **RDB** (instantanés périodiques, compact, rapide au
-redémarrage, perte possible des dernières minutes) et **AOF** (journal de chaque écriture, plus
-sûr, fichier plus gros). On peut activer les deux.
+### Le vocabulaire minimum
 
-Point de vigilance : sans mot de passe et exposé sur Internet, Redis est une porte ouverte.
-Configurez `bind 127.0.0.1`, `requirepass`, et une politique d'éviction `maxmemory-policy` adaptée
-(`allkeys-lru` pour un cache pur).
+- Une **table** est un tableau : une ligne par élément, une colonne par information. La table
+  `clients` a une ligne par client, avec les colonnes `nom`, `email`, `date_inscription`.
+- **SQL** est la langue dans laquelle on parle à la base. Elle se lit presque comme de l'anglais :
+  `SELECT nom FROM clients WHERE ville = 'Lyon'` veut dire "donne-moi le nom des clients dont la
+  ville est Lyon".
+- Un **index** est la clé de la performance. C'est exactement l'index d'un livre : sans lui, pour
+  trouver un mot, il faut lire toutes les pages ; avec lui, on va directement à la bonne. Sur un
+  million de lignes, une recherche sans index prend des secondes, avec index quelques
+  millisecondes. **C'est de très loin la cause numéro un des sites lents.**
+- Une **transaction** est un groupe d'opérations qui doivent réussir ensemble ou échouer
+  ensemble. Un virement bancaire retire d'un compte et ajoute à l'autre : si la machine s'éteint
+  entre les deux, la base annule tout. Elle ne laisse jamais l'argent disparaître à mi-chemin.
 
-**Memcached** est l'alternative historique : plus simple, multi-thread, uniquement des paires
-clé-valeur, sans persistance. Redis l'a largement supplanté grâce à ses structures de données.
+Ces garanties portent un sigle que vous verrez souvent, **ACID**. Retenez surtout la dernière
+lettre : une fois que la base vous a dit "c'est enregistré", c'est vrai même si la machine
+s'éteint dans la seconde.
 
-### 13.2 MongoDB
+### MySQL et MariaDB
 
-Base orientée documents : les enregistrements sont des documents de type JSON binaire (BSON),
-regroupés en collections, sans schéma imposé. Elle brille quand la structure des données varie
-d'un enregistrement à l'autre, ou pour un prototypage rapide. Le partitionnement horizontal
-(*sharding*) est intégré.
+MySQL est né en 1995 et a accompagné toute la première génération du web. En 2010, il a été
+racheté par Oracle ; ses créateurs d'origine sont partis fonder **MariaDB**, une copie libre qui
+a gardé les mêmes commandes et le même fonctionnement.
 
-Le revers : sans schéma imposé par la base, la cohérence devient la responsabilité entière de
-l'application, et les jointures restent coûteuses. Beaucoup d'équipes reviennent au relationnel
-avec JSONB dans PostgreSQL, qui offre la souplesse documentaire tout en gardant les transactions
-et les jointures.
+En pratique, pour un débutant, **MariaDB et MySQL s'utilisent de la même façon**. Sur Debian et
+Ubuntu, installer "mysql" installe d'ailleurs souvent MariaDB. Les deux ont divergé depuis, mais
+pas sur ce que vous ferez au début.
 
-### 13.3 Files de messages
+**Son point fort** : la simplicité et l'omniprésence. WordPress, Drupal, PrestaShop et la
+majorité des logiciels PHP sont conçus pour elle. Si vous installez un CMS, ce sera elle.
 
-Elles découplent les traitements : le serveur web dépose un message et répond immédiatement, un
-travailleur séparé traite la tâche longue (envoi d'e-mail, génération de PDF, encodage vidéo).
+**Le réglage qui compte vraiment.** MariaDB garde en mémoire une copie des données les plus
+utilisées, pour éviter d'aller sur le disque. Ce cache s'appelle `innodb_buffer_pool_size`. S'il
+est trop petit, chaque demande va lire le disque et tout rame. Sur une machine dédiée à la base,
+donnez-lui environ 60 % de la mémoire totale.
 
-**RabbitMQ** implémente le protocole AMQP avec un routage riche (échanges, files, clés de
-routage). Idéal pour distribuer des tâches à des travailleurs.
-**Apache Kafka** est un journal distribué et persistant : les messages sont conservés et
-rejouables, plusieurs consommateurs indépendants lisent le même flux à leur rythme. Conçu pour de
-très gros volumes d'événements.
-**Redis Streams** et **NATS** offrent des solutions plus légères.
+```bash
+sudo mysql_secure_installation     # à lancer juste après l'installation
+sudo mysql -u root                 # ouvrir une session
+mysqldump -u root -p mabase > sauvegarde.sql    # sauvegarder une base
+```
 
-### 13.4 Moteurs de recherche
+### PostgreSQL
 
-**Elasticsearch** et son fork libre **OpenSearch** indexent du texte avec Lucene et fournissent
-une recherche pleine texte pertinente, du filtrage à facettes et des agrégations. Ils servent
-aussi de socle à la centralisation de logs (la pile ELK : Elasticsearch, Logstash, Kibana).
-Attention, ce sont de gros consommateurs de RAM (JVM) et ils ne remplacent pas une base de
-référence : on y indexe une copie des données, la vérité reste dans le SGBD.
+Plus ancien encore dans ses racines universitaires, PostgreSQL a une réputation de rigueur. Là où
+MySQL a longtemps accepté des approximations pour aller vite, PostgreSQL refuse les données
+incohérentes et prévient tout de suite.
+
+**Ses points forts.**
+
+- Il vérifie réellement les règles que vous lui donnez. Si vous déclarez qu'une commande doit
+  appartenir à un client existant, il est impossible de créer une commande orpheline.
+- Il gère nativement des données modernes : le format JSON avec recherche rapide dedans, les
+  coordonnées géographiques (avec l'extension PostGIS), les séries de mesures dans le temps.
+- Il s'étend par **extensions**, des modules officiels qui ajoutent des capacités entières.
+
+**Ses deux particularités à connaître.**
+
+1. **Une connexion coûte cher.** PostgreSQL crée un processus séparé par client connecté. Passé
+   quelques centaines, la machine souffre. La solution standard s'appelle un *pool* de
+   connexions (PgBouncer) : un intermédiaire qui fait patienter tout le monde sur un petit nombre
+   de connexions réelles. Vous n'en aurez pas besoin au début, mais retenez le mot.
+2. **Le ménage, ou VACUUM.** Quand on modifie une ligne, PostgreSQL n'écrase pas l'ancienne : il
+   en écrit une nouvelle version et marque l'ancienne comme périmée. Cela permet à ceux qui
+   lisent de ne jamais bloquer ceux qui écrivent. En contrepartie, il faut passer le balai. Un
+   processus automatique, l'*autovacuum*, s'en charge. S'il est mal réglé, la base gonfle jusqu'à
+   occuper dix fois la place utile. C'est le point de surveillance propre à PostgreSQL.
+
+**Le fichier qui cause 90 % des problèmes de connexion débutants** : `pg_hba.conf`. Il définit qui
+a le droit de se connecter, depuis où, et comment. Si votre application dit "connexion refusée"
+alors que la base tourne, c'est presque toujours là qu'il faut regarder.
+
+```bash
+sudo -u postgres psql              # ouvrir une session
+pg_dump -Fc mabase > mabase.dump   # sauvegarder
+```
+
+### Comment choisir
+
+| Votre situation | Le choix raisonnable |
+|---|---|
+| WordPress, Drupal, un CMS PHP | MariaDB, vous n'avez pas le choix et c'est très bien |
+| Une nouvelle application métier | PostgreSQL |
+| Des données géographiques, du JSON, des calculs complexes | PostgreSQL, sans hésiter |
+| Votre équipe connaît déjà l'un des deux | Celui qu'elle connaît |
+
+Un mot d'honnêteté pour finir : entre ces deux moteurs, la différence de vitesse est aujourd'hui
+minime comparée à la différence entre une requête indexée et une requête qui ne l'est pas.
+Occupez-vous de vos index avant de choisir votre camp.
+
+### Et SQLite ?
+
+SQLite n'est pas un serveur : c'est une bibliothèque qui range tout dans un simple fichier, sans
+service à démarrer ni port à ouvrir. Parfait pour apprendre, pour une petite application, pour
+des tests. Sa limite : une seule écriture à la fois, et pas de partage entre plusieurs machines.
 
 ---
 
-## 14. Conteneurs et orchestration
+## 15. Le cache, les files d'attente et la recherche
 
-### 14.1 Ce qu'est vraiment un conteneur
+### Redis, le frigo du comptoir
 
-Comme vu en 8.4, un conteneur est un processus Linux ordinaire, isolé par des **namespaces** et
-plafonné par des **cgroups**, qui voit comme racine une **image de système de fichiers en
-couches**. Il n'y a pas de machine virtuelle, pas de second noyau : tous les conteneurs d'un hôte
-partagent le noyau de cet hôte. C'est pourquoi un conteneur démarre en quelques dizaines de
-millisecondes là où une VM met des dizaines de secondes.
+**Redis** garde des données en mémoire vive plutôt que sur le disque. Conséquence : c'est
+extrêmement rapide (une fraction de milliseconde), mais la mémoire est chère et limitée. On n'y
+met donc pas tout : on y met ce qui est demandé sans arrêt.
+
+Trois usages qui couvrent presque tous les cas :
+
+1. **Le cache.** Une requête à la base coûte 50 millisecondes ? On garde le résultat dans Redis
+   pendant 5 minutes. Les milliers de visiteurs suivants sont servis instantanément, sans
+   déranger la base.
+2. **Les sessions.** Ce qui vous garde connecté d'une page à l'autre. C'est petit, ça change
+   souvent, ça n'a pas besoin de survivre éternellement : le profil parfait.
+3. **Les files de tâches.** Une liste de choses à faire, dans laquelle des programmes viennent
+   piocher.
+
+À savoir : par défaut, Redis ne demande pas de mot de passe. Exposé sur Internet sans réglage,
+il est immédiatement pillé. Faites-le écouter sur `127.0.0.1` et donnez-lui un mot de passe.
+
+**Memcached** est un cousin plus ancien et plus simple. Redis l'a largement remplacé.
+
+### Les files de messages
+
+Certaines tâches sont longues : envoyer 5 000 e-mails, générer un PDF, encoder une vidéo. Si le
+serveur web les fait pendant la visite, le visiteur attend devant une page bloquée.
+
+La solution est la **file de messages**. Le site dépose un ticket ("il faut envoyer cet e-mail")
+et répond immédiatement au visiteur. Un autre programme, appelé **travailleur** (*worker*), prend
+les tickets un par un et les traite tranquillement. C'est exactement le carnet de commandes
+accroché en cuisine.
+
+Les outils courants : **RabbitMQ** (le classique pour distribuer des tâches), **Kafka** (pour de
+très gros volumes d'événements, avec conservation de l'historique), et Redis lui-même pour les
+besoins simples.
+
+### La recherche
+
+Une base de données classique cherche mal dans du texte libre : elle ne gère ni les fautes de
+frappe, ni les mots proches, ni le classement par pertinence. **Elasticsearch** (et son jumeau
+libre **OpenSearch**) fait ce travail.
+
+Un principe à retenir : ce n'est pas là qu'on range la vérité. On y recopie une image des données
+pour pouvoir chercher dedans ; l'original reste dans la base de données. Si l'index se perd, on
+le reconstruit.
+
+### MongoDB
+
+**MongoDB** range des fiches libres plutôt que des tableaux à colonnes fixes : chaque
+enregistrement peut avoir sa propre forme. C'est pratique quand les données sont irrégulières ou
+quand on prototype vite.
+
+Le revers : comme la base ne vérifie rien, toute la cohérence repose sur votre code. Beaucoup
+d'équipes reviennent aujourd'hui à PostgreSQL, qui sait stocker du JSON souple tout en gardant
+les garanties d'un moteur relationnel.
+
+---
+
+## 16. Les conteneurs
+
+### L'idée
+
+Le problème que résolvent les conteneurs est vieux comme l'informatique : "ça marche sur ma
+machine, mais pas sur le serveur". Les versions diffèrent, une bibliothèque manque, un réglage
+n'est pas le même.
+
+Un **conteneur** est une boîte qui contient l'application **et** tout ce dont elle a besoin pour
+tourner. On expédie la boîte entière : elle se comporte partout de la même façon. C'est le plateau
+repas préparé en cuisine centrale, qui arrive identique dans chaque train.
+
+### Ce n'est pas une machine virtuelle
+
+Confusion fréquente. Une **machine virtuelle** simule un ordinateur complet avec son propre
+système d'exploitation : c'est lourd, plusieurs gigaoctets, et long à démarrer.
+
+Un conteneur, lui, n'emporte pas de système d'exploitation. C'est un programme ordinaire qui
+tourne sur le noyau Linux de la machine hôte, mais à qui le noyau ment sur ce qu'il voit : il
+croit être seul, avec ses propres dossiers et son propre réseau. D'où sa légèreté.
 
 | | Machine virtuelle | Conteneur |
 |---|---|---|
-| Isolation | Matérielle, très forte | Noyau partagé, plus fine |
-| Démarrage | Dizaines de secondes | Millisecondes |
-| Empreinte | Gigaoctets (OS complet) | Mégaoctets |
-| Noyau | Le sien | Celui de l'hôte |
+| Contenu | Un système complet | Juste l'application et ses dépendances |
+| Taille | Plusieurs gigaoctets | Quelques dizaines de mégaoctets |
+| Démarrage | Une minute | Une fraction de seconde |
+| Isolation | Très forte | Bonne, mais le noyau est partagé |
 
-### 14.2 Docker et Podman
+### Docker en pratique
 
-**Docker** a popularisé le format d'image et l'outillage. **Podman** offre la même interface en
-ligne de commande sans démon central et sans root, ce qui plaît en environnement contraint.
-Le format d'image est standardisé (OCI), donc les images sont interchangeables.
+**Docker** est l'outil qui a popularisé tout cela. **Podman** fait la même chose sans avoir
+besoin des droits d'administrateur.
 
 ```bash
-docker ps                          # conteneurs en cours
-docker logs -f mon-conteneur
-docker exec -it mon-conteneur bash # entrer dans un conteneur
-docker stats                       # consommation en direct
-docker compose up -d               # démarrer une pile complète décrite en YAML
+docker ps                            # quels conteneurs tournent ?
+docker logs -f mon-conteneur         # que raconte celui-ci ?
+docker exec -it mon-conteneur bash   # entrer dedans pour regarder
+docker compose up -d                 # démarrer toute une pile décrite dans un fichier
 ```
 
-Un `docker-compose.yml` typique reprend exactement la pile de la section 10 : un service `nginx`,
-un service `app`, un service `postgres` avec un volume persistant, un service `redis`. Les données
-d'une base **doivent** être dans un volume nommé, sinon elles disparaissent avec le conteneur.
+**Le piège numéro un du débutant** : un conteneur est jetable, et tout ce qu'il contient
+disparaît avec lui. Si vous mettez une base de données dans un conteneur sans configurer de
+**volume** (un dossier de la machine hôte relié au conteneur), vous perdez toutes vos données au
+premier redémarrage. Cette erreur se fait une seule fois dans une vie.
 
-### 14.3 Kubernetes
+### Kubernetes
 
-Quand une application dépasse un seul serveur, Kubernetes orchestre les conteneurs sur un ensemble
-de machines : il place les charges, redémarre ce qui tombe, ajuste le nombre de répliques,
-distribue le trafic et déroule les mises à jour progressivement. C'est puissant et coûteux en
-complexité. Pour un site ou une API sur un ou deux serveurs, `systemd` avec Docker Compose, ou
-même sans conteneurs du tout, reste souvent le choix le plus sage.
+Quand une application ne tient plus sur une seule machine, **Kubernetes** répartit les conteneurs
+sur un groupe de machines, redémarre ce qui tombe, ajoute des copies quand la charge monte.
+C'est puissant, et c'est complexe.
 
----
-
-## 15. Le trajet complet d'une requête HTTP
-
-Voici ce qui se passe réellement quand un visiteur ouvre `https://site.example.com/produits/42`.
-Cette chronologie relie toutes les couches vues précédemment.
-
-1. **DNS** : le navigateur résout `site.example.com` en adresse IP, en interrogeant le résolveur
-   configuré, qui remonte éventuellement jusqu'aux serveurs faisant autorité.
-2. **TCP** : poignée de main en trois temps (SYN, SYN-ACK, ACK) vers le port 443. Côté serveur,
-   c'est le noyau qui l'accepte et la place dans la file d'écoute de la socket.
-3. **TLS** : négociation de la version et des algorithmes, envoi du certificat, vérification par le
-   client de la chaîne de confiance, dérivation des clés de session. À partir de là tout est
-   chiffré.
-4. **HTTP** : le client envoie `GET /produits/42` avec ses en-têtes.
-5. **Serveur web** : Nginx (ou Apache) reçoit la requête, la fait correspondre à un bloc `server`
-   grâce à l'en-tête `Host`, puis choisit un `location`. Si la cible est un fichier statique, il
-   le lit sur disque (via le cache du noyau) et le renvoie : la chaîne s'arrête ici, en une
-   fraction de milliseconde.
-6. **Passage à l'application** : sinon, il transmet la requête au runtime via une socket Unix ou
-   TCP : PHP-FPM en FastCGI, ou un processus Node/Gunicorn/Puma en HTTP.
-7. **Code applicatif** : le routeur identifie le contrôleur, qui interroge d'abord **Redis**
-   (`produit:42`). En cas de succès, on saute l'étape suivante.
-8. **Base de données** : sinon, requête SQL vers PostgreSQL ou MariaDB. Le moteur analyse la
-   requête, choisit un plan (index ou parcours complet), lit les pages depuis son cache mémoire ou
-   depuis le disque, applique l'isolation transactionnelle, renvoie les lignes. Le résultat est
-   mis en cache dans Redis avec une durée de vie.
-9. **Rendu** : le gabarit est assemblé en HTML.
-10. **Retour** : la réponse remonte au serveur web, qui la compresse (gzip ou brotli), ajoute les
-    en-têtes de cache et de sécurité, l'écrit dans la socket TLS.
-11. **Journalisation** : une ligne dans `access.log`, avec le code de statut et le temps de
-    réponse. Les métriques sont exposées pour Prometheus.
-12. **Asynchrone** : si une tâche longue a été déclenchée, un message est déposé dans RabbitMQ et
-    un travailleur la traitera hors du chemin de la requête.
-
-**Où le temps se perd, par ordre de fréquence** : une requête SQL sans index, un appel réseau
-externe synchrone, le problème des N+1 requêtes, l'absence de cache, et enfin seulement le CPU
-applicatif. Diagnostiquez toujours dans cet ordre.
+Conseil sincère pour un débutant : vous n'en avez pas besoin. Un serveur, systemd, et
+éventuellement Docker Compose suffisent très longtemps.
 
 ---
 
-## 16. Sécurité
+# Partie 4 : mettre tout ensemble
 
-### 16.1 Accès SSH
+## 17. Le voyage d'une page web, du clic à l'écran
 
-C'est la porte d'entrée, donc la première à durcir. Dans `/etc/ssh/sshd_config` :
+Voici le récit complet. Chaque étape utilise une notion des chapitres précédents : c'est le
+moment où tout se relie. Le visiteur ouvre `https://site.example.com/produits/42`.
+
+**1. Trouver l'adresse.** Le navigateur ne connaît que le nom du site. Il interroge le DNS,
+l'annuaire, qui lui répond avec l'adresse IP de la machine. *(chapitre 11)*
+
+**2. Frapper à la porte.** Le navigateur établit une connexion vers le port 443 de cette adresse.
+C'est le noyau du serveur qui décroche, pas encore l'application. *(chapitres 4 et 11)*
+
+**3. Vérifier l'identité.** Le serveur envoie son certificat. Le navigateur vérifie qu'il est
+authentique, puis les deux se mettent d'accord sur une clé de chiffrement. À partir de là,
+personne ne peut lire ce qui passe. C'est le cadenas. *(chapitre 13)*
+
+**4. Passer commande.** Le navigateur envoie sa demande : "donne-moi la page /produits/42".
+
+**5. Le serveur de salle reçoit.** Nginx regarde le nom demandé, trouve la configuration du site
+concerné, et décide. Si la demande visait une image, il l'envoie directement et **tout s'arrête
+ici**, en une fraction de milliseconde. *(chapitre 13)*
+
+**6. Passer en cuisine.** Ici, la page doit être fabriquée. Nginx transmet la demande à
+l'application, sur le port 3000 de la même machine. *(chapitre 13)*
+
+**7. Regarder dans le frigo.** L'application demande d'abord à Redis : "as-tu déjà le produit
+42 ?" Si oui, on saute l'étape suivante et on gagne 50 millisecondes. *(chapitre 15)*
+
+**8. Aller à l'entrepôt.** Sinon, l'application interroge la base de données. Celle-ci lit sa
+requête, choisit son chemin (avec un index, c'est instantané ; sans, elle relit toute la table),
+renvoie les lignes. Le résultat est déposé dans Redis pour la prochaine fois. *(chapitre 14)*
+
+**9. Dresser l'assiette.** L'application assemble la page HTML avec les données reçues.
+
+**10. Servir.** La réponse repart vers Nginx, qui la compresse pour qu'elle voyage plus vite,
+ajoute quelques en-têtes, et l'envoie au navigateur par la connexion chiffrée.
+
+**11. Noter dans le cahier.** Une ligne s'ajoute au journal des visites : qui, quand, quelle
+page, quel temps de réponse. *(chapitre 19)*
+
+**12. La suite, plus tard.** Si la page devait déclencher un e-mail de confirmation, un ticket a
+été déposé dans la file. Un travailleur l'enverra dans quelques secondes, sans faire attendre le
+visiteur. *(chapitre 15)*
+
+### Quand c'est lent, cherchez dans cet ordre
+
+C'est le réflexe de diagnostic le plus utile de toute la leçon. Les causes, de la plus fréquente
+à la plus rare :
+
+1. **Une requête sans index** à l'étape 8. Vérifiez ceci en premier, toujours.
+2. **Le problème dit "N+1"** : l'application fait une requête, puis une requête par ligne
+   obtenue. 100 produits affichés, 101 allers-retours à la base.
+3. **Un appel à un service extérieur** en plein milieu (une API de paiement, un service de
+   météo), qui met deux secondes à répondre.
+4. **L'absence de cache** à l'étape 7 : on refait à chaque visite un travail identique.
+5. **Le code lui-même**, enfin. C'est rarement le coupable, contrairement à l'intuition.
+
+---
+
+## 18. Sécurité : les sept réflexes
+
+Vous n'avez pas besoin d'être expert. Sept habitudes couvrent l'immense majorité des incidents
+réels.
+
+**1. Se connecter par clé, pas par mot de passe.**
+Une **clé SSH** est une paire de fichiers : une partie privée qui reste sur votre ordinateur et
+que vous ne donnez jamais, une partie publique que vous déposez sur le serveur. Un mot de passe
+peut se deviner, pas une clé. Interdisez ensuite les mots de passe et la connexion directe en
+root dans `/etc/ssh/sshd_config` :
 
 ```
 PermitRootLogin no
 PasswordAuthentication no
-PubkeyAuthentication yes
-AllowUsers admin deploy
 ```
 
-L'authentification par clé remplace le mot de passe : la clé privée reste sur votre poste, la
-publique va dans `~/.ssh/authorized_keys` sur le serveur. Testez toujours une nouvelle session
-dans un second terminal **avant** de fermer la première, sinon une erreur de configuration vous
-enferme dehors. Ajoutez `fail2ban`, qui bannit temporairement les adresses IP après des échecs
-répétés.
+**Testez toujours une nouvelle connexion dans une deuxième fenêtre avant de fermer la première.**
+Si vous vous êtes trompé, la première fenêtre encore ouverte est votre seule porte de secours.
 
-### 16.2 Les principes qui comptent
+**2. Fermer tout ce qui ne sert pas.** Un pare-feu qui refuse par défaut, et les bases de données
+qui écoutent uniquement sur `127.0.0.1`. *(chapitre 11)*
 
-**Moindre privilège** : chaque service sous son propre compte, aucun démon en root, sudo nominatif
-et journalisé.
-**Surface d'attaque minimale** : désinstallez ce qui ne sert pas, fermez tous les ports sauf ceux
-qui sont nécessaires, ne faites écouter les bases que sur la boucle locale.
-**Mises à jour** : `unattended-upgrades` sur Debian/Ubuntu ou `dnf-automatic` sur RHEL pour les
-correctifs de sécurité, avec une revue régulière des paquets nécessitant un redémarrage
-(`needrestart`).
-**Chiffrement en transit** : TLS partout, certificats Let's Encrypt renouvelés automatiquement par
-`certbot`, protocoles anciens désactivés (TLS 1.2 minimum).
-**Défense en profondeur** : SELinux (RHEL) ou AppArmor (Debian/Ubuntu) confinent chaque programme
-à un profil de comportement autorisé. Quand un service se comporte étrangement, vérifiez d'abord
-`ausearch -m avc` ou `dmesg | grep DENIED` avant de désactiver le mécanisme, qui est là pour vous.
+**3. Ne jamais faire tourner un service en root.** Chaque service a son compte dédié.
+*(chapitre 9)*
 
-### 16.3 Sauvegardes
+**4. Mettre à jour.** La plupart des serveurs compromis le sont par une faille connue et corrigée
+depuis des mois. Activez les mises à jour de sécurité automatiques :
 
-Une sauvegarde qui n'a jamais été restaurée n'est pas une sauvegarde. Appliquez la règle **3-2-1** :
-trois copies, sur deux supports différents, dont une hors site. Testez la restauration à intervalle
-régulier, sur une machine séparée, chronomètre en main : c'est le seul moyen de connaître votre
-délai réel de reprise.
+```bash
+sudo apt install unattended-upgrades
+```
 
-Pour une base de données, distinguez la sauvegarde **logique** (`mysqldump`, `pg_dump` : portable,
-lente à restaurer sur de gros volumes) de la sauvegarde **physique** (`pg_basebackup`, snapshot
-LVM : rapide, liée à la version du moteur). Pour PostgreSQL, l'archivage continu des WAL permet une
-restauration à un instant précis (*Point In Time Recovery*), ce qui sauve la mise quand un
-`DELETE` sans clause `WHERE` est passé en production.
+**5. Chiffrer les échanges.** HTTPS partout, avec un certificat gratuit Let's Encrypt renouvelé
+automatiquement par `certbot`. Il n'y a plus aucune raison de servir un site en clair.
+
+**6. Ajouter fail2ban.** Ce petit outil surveille les journaux et bannit temporairement les
+adresses qui multiplient les tentatives de connexion ratées. Cela élimine le bruit de fond
+permanent des robots.
+
+**7. Sauvegarder, et surtout restaurer.**
+La règle **3-2-1** : trois copies, sur deux supports différents, dont une ailleurs
+géographiquement.
+
+Et la vérité que tout le monde apprend trop tard : **une sauvegarde jamais restaurée n'est pas
+une sauvegarde.** Testez la restauration sur une machine séparée, chronomètre en main. Vous
+saurez alors combien de temps il vous faudrait vraiment pour repartir. Beaucoup découvrent à ce
+moment-là que leurs sauvegardes étaient vides depuis des mois.
 
 ---
 
-## 17. Observabilité : logs, métriques, sauvegardes
-
-**Les trois piliers** : les *logs* racontent ce qui s'est passé, les *métriques* mesurent des
-tendances, les *traces* suivent une requête à travers les composants.
+## 19. Savoir si tout va bien
 
 ### Les journaux
 
+Chaque logiciel raconte ce qu'il fait. Quand quelque chose ne marche pas, la réponse est presque
+toujours écrite quelque part.
+
 ```bash
-journalctl -u nginx --since today
-journalctl -p err -b                     # erreurs du démarrage courant
-tail -f /var/log/nginx/access.log
+systemctl list-units --failed          # y a-t-il un service en échec ?
+journalctl -u nginx --since today      # que dit ce service aujourd'hui ?
+journalctl -p err -b                   # toutes les erreurs depuis le démarrage
+tail -f /var/log/nginx/error.log       # voir arriver les erreurs en direct
 ```
 
-`journald` centralise les logs des services systemd en format structuré et indexé. Les
-applications continuent souvent d'écrire dans `/var/log/`, où **logrotate** se charge de la
-rotation et de la compression pour éviter de saturer `/var`. Vérifiez sa configuration sur tout
-nouveau service : un log qui remplit le disque fait tomber tout le serveur.
+Un conseil qui fait gagner des heures : **lisez le message d'erreur en entier, jusqu'au bout,
+avant de chercher sur Internet.** Il contient très souvent le nom du fichier fautif et le numéro
+de la ligne.
 
-### Les métriques
+Attention aussi à un piège : les journaux grossissent sans fin et peuvent remplir le disque, ce
+qui arrête tout. L'outil `logrotate` s'en occupe automatiquement, mais vérifiez qu'il est bien
+configuré pour tout nouveau service que vous installez.
 
-Le trio courant : **Prometheus** collecte (en interrogeant des exportateurs : `node_exporter` pour
-la machine, `nginx-exporter`, `postgres_exporter`), **Grafana** affiche, **Alertmanager** notifie.
+### Les cinq questions à se poser régulièrement
 
-**Les quatre signaux dorés** à surveiller sur tout service : latence, trafic, taux d'erreurs,
-saturation. Complétez avec les indicateurs propres au système : espace disque restant (avec une
-alerte à 80 %, pas à 95 %), mémoire disponible, charge moyenne rapportée au nombre de cœurs,
-expiration des certificats TLS.
+| Question | La commande | Le seuil d'inquiétude |
+|---|---|---|
+| Reste-t-il de la place sur le disque ? | `df -h` | Au-delà de 80 % d'occupation |
+| La mémoire suffit-elle ? | `free -h` | Colonne *available* qui s'effondre |
+| La machine est-elle surchargée ? | `uptime` | Charge durablement supérieure au nombre de cœurs |
+| Un service est-il tombé ? | `systemctl list-units --failed` | La liste doit être vide |
+| Mon certificat expire-t-il bientôt ? | `certbot certificates` | Moins de 21 jours restants |
 
----
-
-## 18. Travaux pratiques
-
-À faire sur une machine virtuelle jetable ou un conteneur, jamais sur un serveur en production.
-
-### TP 1 : reconnaissance (30 minutes)
-Sur un serveur existant, répondez par des commandes : quelle distribution et quelle version de
-noyau ? Combien de cœurs et de RAM ? Quels services écoutent sur le réseau, et sous quel
-utilisateur tournent-ils ? Combien d'espace reste-t-il sur `/var` ? Quels services sont en échec ?
-Quel a été le service le plus lent au dernier démarrage ?
-
-### TP 2 : une pile LEMP complète (2 heures)
-Installez Nginx, PostgreSQL et un runtime applicatif. Créez un compte système dédié pour
-l'application, un hôte virtuel qui sert les fichiers statiques directement et délègue le reste,
-une unité systemd durcie pour le runtime, et un certificat TLS. Vérifiez chaque étape avec
-`nginx -t`, `systemctl status` et `curl -I`.
-
-### TP 3 : diagnostiquer une lenteur (1 heure)
-Chargez une table de cent mille lignes, écrivez une requête sur une colonne non indexée, mesurez
-avec `EXPLAIN ANALYZE`. Ajoutez l'index, remesurez, et lisez la différence dans le plan
-d'exécution. Puis mettez le résultat en cache dans Redis et comparez les trois temps.
-
-### TP 4 : survivre à une panne (1 heure)
-Faites une sauvegarde de votre base. Supprimez une table. Restaurez. Chronométrez. Ensuite,
-provoquez volontairement une saturation du disque avec `fallocate -l 5G /var/gros-fichier` et
-observez le comportement des services, puis nettoyez. Notez quels signaux vous auraient alerté à
-temps.
+Pour aller plus loin, on installe un système de surveillance qui pose ces questions
+automatiquement et prévient par e-mail : **Prometheus** collecte les mesures, **Grafana** dessine
+les courbes. Mais commencez par prendre l'habitude des cinq commandes ci-dessus.
 
 ---
 
-## 19. Quiz de révision
+## 20. Vos premiers pas, en pratique
 
-1. Quelle est la différence entre l'espace utilisateur et l'espace noyau, et où passe-t-on de l'un
-   à l'autre ?
-2. Pourquoi `free -h` affiche-t-il si peu de mémoire libre sur un serveur sain ?
-3. Que fait l'initramfs et pourquoi ne peut-on pas toujours s'en passer ?
-4. Quelle est la différence entre `systemctl restart` et `systemctl reload` ?
-5. Un `df -h` montre 40 % d'espace libre mais l'écriture échoue. Citez deux causes possibles.
-6. Pourquoi le MPM `prefork` d'Apache consomme-t-il beaucoup plus de mémoire que Nginx à
-   concurrence égale ?
-7. Qu'est-ce qu'un `.htaccess`, quel est son avantage et quel est son coût ?
-8. Expliquez le rôle du VACUUM dans PostgreSQL. Que se passe-t-il s'il ne tourne pas ?
-9. Quelle est la différence architecturale principale entre MySQL et PostgreSQL en matière de
-   gestion des connexions, et quelle conséquence pratique en découle ?
-10. Quel réglage est le plus déterminant pour les performances d'InnoDB, et à quelle valeur ?
-11. Qu'est-ce qu'un conteneur, en termes de mécanismes du noyau ?
-12. Dans le trajet d'une requête HTTP, citez les trois endroits les plus fréquents où le temps se
-    perd.
-13. Pourquoi ne doit-on jamais activer un pare-feu sans avoir d'abord autorisé le port 22 ?
-14. Que signifie la règle 3-2-1 pour les sauvegardes, et quelle vérification manque-t-il souvent ?
+Faites tout ceci sur une machine jetable : une machine virtuelle sur votre ordinateur, ou un
+petit serveur loué à quelques euros que vous pourrez détruire ensuite. **Jamais sur une machine
+qui sert à quelque chose.**
+
+### Exercice 1 : se connecter et regarder (30 minutes)
+
+Connectez-vous en SSH, puis répondez à ces questions avec une commande chacune. L'objectif n'est
+pas de tout comprendre, mais de reconnaître les réponses.
+
+```bash
+cat /etc/os-release       # quelle distribution, quelle version ?
+uname -r                  # quelle version du noyau ?
+nproc                     # combien de cœurs de processeur ?
+free -h                   # combien de mémoire ?
+df -h                     # combien de place sur le disque ?
+uptime                    # depuis combien de temps la machine tourne ?
+ss -lntp                  # quels services écoutent sur le réseau ?
+systemctl list-units --failed    # quelque chose est-il cassé ?
+```
+
+### Exercice 2 : installer un serveur web (45 minutes)
+
+```bash
+sudo apt update
+sudo apt install nginx
+sudo systemctl status nginx        # doit afficher "active (running)" en vert
+```
+
+Ouvrez ensuite l'adresse IP de la machine dans votre navigateur. Vous devez voir la page
+d'accueil par défaut de Nginx. **Si vous voyez cette page, vous venez de faire fonctionner un
+serveur web.**
+
+Puis modifiez-la pour comprendre le lien entre fichier et page affichée :
+
+```bash
+echo "<h1>Bonjour depuis mon serveur</h1>" | sudo tee /var/www/html/index.html
+```
+
+Rechargez la page dans le navigateur. Si rien ne s'affiche depuis l'extérieur, c'est presque
+toujours le pare-feu : vérifiez avec `sudo ufw status` que le port 80 est autorisé.
+
+### Exercice 3 : une base de données (1 heure)
+
+```bash
+sudo apt install postgresql
+sudo -u postgres psql
+```
+
+Vous êtes maintenant dans la base. Tapez :
+
+```sql
+CREATE TABLE clients (id serial PRIMARY KEY, nom text, ville text);
+INSERT INTO clients (nom, ville) VALUES ('Dupont', 'Lyon'), ('Martin', 'Paris');
+SELECT * FROM clients;
+SELECT nom FROM clients WHERE ville = 'Lyon';
+\q
+```
+
+Vous venez de créer une table, d'y mettre deux lignes et de les interroger. C'est tout le
+principe des bases de données relationnelles.
+
+### Exercice 4 : casser et réparer (1 heure)
+
+Le plus formateur des quatre. Avant tout, faites une sauvegarde.
+
+1. Arrêtez Nginx (`sudo systemctl stop nginx`) et rechargez la page. Constatez l'erreur du
+   navigateur, puis regardez ce que dit `systemctl status nginx`.
+2. Introduisez volontairement une faute dans la configuration de Nginx, lancez `sudo nginx -t`,
+   et lisez le message : il vous donne le fichier et la ligne. Réparez.
+3. Supprimez la table `clients` créée à l'exercice 3, puis restaurez-la depuis votre sauvegarde.
+   Chronométrez.
+
+Savoir lire un message d'erreur et restaurer une sauvegarde vaut plus que connaître cent
+commandes par cœur.
 
 ---
 
-## 20. Glossaire
+## 21. Mémo, quiz corrigé et glossaire
 
-**ACID** : atomicité, cohérence, isolation, durabilité. Les garanties transactionnelles d'un SGBD.
-**cgroup** : mécanisme du noyau limitant les ressources d'un groupe de processus.
-**Démon** (*daemon*) : programme fonctionnant en arrière-plan, sans terminal.
-**epoll** : mécanisme du noyau permettant de surveiller des milliers de sockets efficacement.
-**FastCGI** : protocole entre serveur web et interpréteur applicatif, utilisé par PHP-FPM.
-**FHS** : norme définissant le rôle de chaque répertoire de l'arborescence.
-**Inode** : structure décrivant un fichier (droits, dates, blocs). Leur nombre est fini.
-**MPM** : module de traitement de la concurrence d'Apache.
-**MVCC** : contrôle de concurrence par versions multiples des lignes.
-**Namespace** : isolation de la vue qu'un processus a du système.
-**Proxy inverse** : serveur en frontal qui relaie les requêtes vers des serveurs d'arrière-plan.
-**Socket** : point de communication réseau, couple adresse et port.
-**Swap** : espace disque servant d'extension à la RAM pour les pages inactives.
-**Systemd unit** : fichier déclaratif décrivant un service, une socket, un montage ou une cible.
-**WAL** : journal d'écriture anticipée garantissant la durabilité après un crash.
+### Les vingt commandes du quotidien
 
----
+| Commande | Ce qu'elle fait |
+|---|---|
+| `ls -la` | Lister le contenu d'un dossier |
+| `cd /chemin` | Se déplacer |
+| `pwd` | Où suis-je ? |
+| `cat fichier` | Afficher un fichier court |
+| `less fichier` | Lire un gros fichier (q pour sortir) |
+| `tail -f fichier` | Voir les nouvelles lignes en direct |
+| `grep motif fichier` | Chercher un texte dans un fichier |
+| `nano fichier` | Éditer un fichier simplement |
+| `cp`, `mv`, `rm` | Copier, déplacer, supprimer |
+| `sudo commande` | Exécuter en administrateur |
+| `systemctl status service` | Comment va ce service ? |
+| `systemctl restart service` | Le redémarrer |
+| `journalctl -u service -f` | Suivre ses messages en direct |
+| `df -h` | Place disque restante |
+| `free -h` | Mémoire disponible |
+| `top` ou `htop` | Ce qui consomme les ressources |
+| `ss -lntp` | Qui écoute sur quel port |
+| `ps aux` | Tous les processus |
+| `apt install paquet` | Installer un logiciel |
+| `chown` et `chmod` | Changer propriétaire et droits |
 
-## Pour aller plus loin
+### Quiz corrigé
 
-- La documentation officielle de votre distribution (Debian Administrator's Handbook, Red Hat
-  System Administration).
-- `man` reste la meilleure référence : `man 7 signal`, `man 5 proc`, `man systemd.exec`.
-- Les documentations d'Apache, Nginx, PostgreSQL et MariaDB sont d'excellente qualité et vieillissent
-  bien, contrairement aux tutoriels de blog.
-- Certifications structurantes si vous voulez un parcours balisé : LPIC-1, RHCSA.
+Répondez d'abord, vérifiez ensuite.
+
+**1. Quelle est la différence entre `systemctl start` et `systemctl enable` ?**
+`start` démarre le service maintenant, mais il ne repartira pas après un redémarrage de la
+machine. `enable` le programme au démarrage sans le lancer tout de suite. Pour les deux :
+`enable --now`.
+
+**2. Pourquoi `free -h` montre-t-il si peu de mémoire libre sur un serveur en bonne santé ?**
+Parce que Linux utilise la mémoire inutilisée comme cache de fichiers. Elle est rendue
+instantanément si un programme en a besoin. Regardez la colonne *available*.
+
+**3. Que veut dire `x` sur un dossier ?**
+Le droit d'entrer dans le dossier, pas de l'exécuter. Sans lui, le dossier est inaccessible même
+avec le droit de lecture.
+
+**4. Pourquoi ne faut-il jamais faire tourner un service en root ?**
+Parce qu'une faille dans ce service donnerait alors tous les pouvoirs sur la machine. Avec un
+compte dédié, l'attaquant reste enfermé dans un périmètre minuscule.
+
+**5. Un service écoute sur `0.0.0.0:5432`. Pourquoi est-ce inquiétant ?**
+`0.0.0.0` signifie "accessible depuis n'importe où". Le port 5432 est celui de PostgreSQL : la
+base de données est exposée à Internet. Elle devrait écouter sur `127.0.0.1`.
+
+**6. Qu'est-ce qu'un index dans une base de données, et pourquoi est-ce important ?**
+C'est l'équivalent de l'index d'un livre : il évite de tout relire pour trouver une ligne. C'est
+la première cause de lenteur d'un site quand il manque.
+
+**7. Quelle est la différence entre contenu statique et contenu dynamique ?**
+Le statique est un fichier existant renvoyé tel quel (image, CSS) : très rapide. Le dynamique
+doit être fabriqué à la demande par l'application, souvent en interrogeant la base.
+
+**8. Pourquoi Nginx tient-il plus de visiteurs simultanés qu'un Apache en configuration
+classique ?**
+Apache attribuait historiquement un processus par visiteur, chacun coûtant plusieurs mégaoctets.
+Nginx emploie quelques travailleurs qui ne restent jamais bloqués à attendre et gèrent des
+milliers de connexions chacun.
+
+**9. Qu'est-ce qu'un conteneur, et en quoi diffère-t-il d'une machine virtuelle ?**
+C'est une application empaquetée avec tout ce dont elle a besoin, qui tourne sur le noyau de la
+machine hôte. Une machine virtuelle simule un ordinateur entier avec son propre système : bien
+plus lourde et bien plus lente à démarrer.
+
+**10. Pourquoi faut-il autoriser le port 22 avant d'activer le pare-feu ?**
+Parce que le port 22 est celui de SSH, votre connexion. En l'oubliant, vous coupez votre propre
+accès et vous ne pouvez plus entrer sur la machine.
+
+**11. Une page met 4 secondes à s'afficher. Par quoi commencez-vous ?**
+Par les requêtes à la base de données, et en particulier les index manquants, puis le problème
+N+1. Le code applicatif vient en dernier.
+
+**12. Que signifie la règle 3-2-1, et qu'oublie-t-on presque toujours ?**
+Trois copies, deux supports, une hors site. On oublie de tester la restauration, qui est
+pourtant la seule preuve que la sauvegarde existe vraiment.
+
+### Glossaire
+
+| Terme | Définition simple |
+|---|---|
+| **Cache** | Copie temporaire d'un résultat, gardée près pour éviter de refaire le travail |
+| **Certificat** | Fichier qui prouve l'identité d'un site et permet le chiffrement |
+| **Client** | Celui qui demande : votre navigateur |
+| **Conteneur** | Application empaquetée avec tout ce qu'il lui faut pour tourner |
+| **Démon / service** | Programme qui tourne en permanence en arrière-plan |
+| **Distribution** | Assemblage complet : le noyau Linux plus les outils autour |
+| **DNS** | L'annuaire qui traduit un nom de domaine en adresse IP |
+| **Index** | Table des matières d'une base de données, indispensable à la vitesse |
+| **Journal (log)** | Le cahier de bord d'un logiciel |
+| **Monter** | Rattacher un disque à un dossier de l'arborescence |
+| **Noyau (kernel)** | Le cœur du système, seul à commander le matériel |
+| **Paquet** | Un logiciel prêt à installer depuis un dépôt officiel |
+| **Pare-feu** | Le filtre qui décide quels ports acceptent des connexions |
+| **Port** | Numéro désignant quel service on veut sur une machine |
+| **Processus** | Un programme en cours d'exécution |
+| **Proxy inverse** | Serveur placé devant d'autres, qui répartit les demandes |
+| **Requête** | Une demande envoyée par un client |
+| **root** | Le compte administrateur, qui peut tout |
+| **SQL** | La langue pour interroger une base de données |
+| **SSH** | Le moyen de se connecter à distance en ligne de commande |
+| **Transaction** | Groupe d'opérations qui réussissent ou échouent ensemble |
+| **Volume** | Dossier persistant relié à un conteneur, pour ne pas perdre les données |
+
+### Pour continuer
+
+- Refaites les quatre exercices sur une machine neuve, sans regarder la leçon.
+- Installez un vrai logiciel de bout en bout : WordPress avec MariaDB, ou une petite application
+  avec PostgreSQL. C'est en butant sur les vrais problèmes qu'on apprend.
+- La commande `man` contient le manuel de tout : `man ls`, `man systemctl`. C'est aride, mais
+  c'est toujours exact, contrairement à beaucoup de tutoriels trouvés en ligne.
+- Quand vous serez à l'aise, la [fiche de référence](./serveurs-linux-reference.md) reprend les
+  mêmes sujets en version dense.
